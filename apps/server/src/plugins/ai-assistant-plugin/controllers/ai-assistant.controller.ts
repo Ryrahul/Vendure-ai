@@ -55,6 +55,7 @@ export class AiAssistantController {
             MAX_CHAT_PRODUCTS,
             SIMILARITY_THRESHOLD,
         );
+        console.log('similar', similar);
         if (similar.length === 0) {
             return {
                 message: 'No matching products in the catalog right now.',
