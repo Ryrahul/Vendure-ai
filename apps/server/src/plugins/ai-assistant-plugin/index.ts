@@ -1,0 +1,16 @@
+export { AiAssistantPlugin } from './ai-assistant.plugin';
+export type { AiAssistantPluginOptions } from './ai-assistant.plugin';
+export { ProductEmbedding } from './entities/product-embedding.entity';
+export { VariantEmbedding } from './entities/variant-embedding.entity';
+export { CollectionEmbedding } from './entities/collection-embedding.entity';
+export { EmbeddingService } from './services/embedding.service';
+export { ProductEmbeddingService } from './services/product-embedding.service';
+export { VariantEmbeddingService } from './services/variant-embedding.service';
+export { CollectionEmbeddingService } from './services/collection-embedding.service';
+export type { EmbeddingOptions } from './services/embedding.service';
+export type { SimilarProductResult } from './services/product-embedding.service';
+export type { SimilarVariantResult } from './services/variant-embedding.service';
+export type { SimilarCollectionResult } from './services/collection-embedding.service';
+export { AI_ASSISTANT_OPTIONS, EMBED_ALL_QUEUE_NAME } from './constants';
+export { AiAssistantController } from './controllers/ai-assistant.controller';
+export type { AiChatRequest, AiChatResponse, AiChatProduct } from './controllers/ai-assistant.controller';

@@ -1,0 +1,46 @@
+import { Inject, Injectable } from '@nestjs/common';
+import OpenAI from 'openai';
+import { AI_ASSISTANT_OPTIONS } from '../constants';
+import type { AiAssistantPluginOptions } from '../constants';
+
+export interface EmbeddingOptions {
+    openaiApiKey: string;
+    /** Model name, e.g. 'text-embedding-3-small' (default) or 'text-embedding-3-large' */
+    model?: string;
+}
+
+/**
+ * Generates text embeddings using OpenAI's embedding API.
+ * Used to embed product name + description for semantic search.
+ */
+@Injectable()
+export class EmbeddingService {
+    private client: OpenAI;
+    private model: string;
+
+    constructor(
+        @Inject(AI_ASSISTANT_OPTIONS) options: AiAssistantPluginOptions,
+    ) {
+        this.client = new OpenAI({ apiKey: options.openaiApiKey });
+        this.model = options.embeddingModel ?? 'text-embedding-3-small';
+    }
+
+    /**
+     * Generate embedding vector for the given text.
+     * @returns Array of numbers (e.g. 1536 dims for text-embedding-3-small)
+     */
+    async embed(text: string): Promise<number[]> {
+        if (!text?.trim()) {
+            throw new Error('EmbeddingService.embed: text is required');
+        }
+        const response = await this.client.embeddings.create({
+            model: this.model,
+            input: text.trim().slice(0, 8191), // model limit
+        });
+        const embedding = response.data[0]?.embedding;
+        if (!embedding || !Array.isArray(embedding)) {
+            throw new Error('EmbeddingService.embed: no embedding in response');
+        }
+        return embedding;
+    }
+}
