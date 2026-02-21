@@ -35,16 +35,22 @@ export class CollectionEmbeddingService {
         ctx: RequestContext,
         queryEmbedding: number[],
         limit: number = 5,
+        minScore?: number,
     ): Promise<SimilarCollectionResult[]> {
         const conn = this.connection.rawConnection;
         const vectorStr = '[' + queryEmbedding.map((n) => Number(n)).join(',') + ']';
         const schema = (conn.options as { schema?: string }).schema ?? 'public';
-        const rows = await conn.query(
-            `SELECT "collectionId", 1 - (embedding <=> $1::vector) AS score
-             FROM ${schema}.collection_embedding WHERE embedding IS NOT NULL
-             ORDER BY embedding <=> $1::vector LIMIT $2`,
-            [vectorStr, limit],
-        );
+        const hasThreshold = minScore != null && minScore > 0;
+        const sql = hasThreshold
+            ? `SELECT "collectionId", 1 - (embedding <=> $1::vector) AS score
+               FROM ${schema}.collection_embedding
+               WHERE embedding IS NOT NULL AND (1 - (embedding <=> $1::vector)) >= $3
+               ORDER BY embedding <=> $1::vector LIMIT $2`
+            : `SELECT "collectionId", 1 - (embedding <=> $1::vector) AS score
+               FROM ${schema}.collection_embedding WHERE embedding IS NOT NULL
+               ORDER BY embedding <=> $1::vector LIMIT $2`;
+        const params = hasThreshold ? [vectorStr, limit, minScore] : [vectorStr, limit];
+        const rows = await conn.query(sql, params);
         return (rows as { collectionId: number; score: number }[]).map((r) => ({
             collectionId: r.collectionId,
             score: Number(r.score),

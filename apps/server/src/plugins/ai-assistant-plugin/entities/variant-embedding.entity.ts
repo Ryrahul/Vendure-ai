@@ -20,6 +20,6 @@ export class VariantEmbedding extends VendureEntity {
     @Column()
     productVariantId: number;
 
-    @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false })
+    @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false, nullable: true })
     embedding?: string;
 }

@@ -21,6 +21,6 @@ export class ProductEmbedding extends VendureEntity {
     @Column()
     productId: number;
 
-    @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false })
+    @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false, nullable: true })
     embedding?: string;
 }

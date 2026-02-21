@@ -20,6 +20,6 @@ export class CollectionEmbedding extends VendureEntity {
     @Column()
     collectionId: number;
 
-    @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false })
+    @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false, nullable: true })
     embedding?: string;
 }
