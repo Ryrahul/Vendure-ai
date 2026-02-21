@@ -1,0 +1,62 @@
+import {NextRequest, NextResponse} from 'next/server';
+
+const VENDURE_API_URL = process.env.VENDURE_SHOP_API_URL || process.env.NEXT_PUBLIC_VENDURE_SHOP_API_URL;
+
+function getVendureBase(): string {
+    if (!VENDURE_API_URL) return '';
+    return VENDURE_API_URL.replace(/\/shop-api\/?$/, '');
+}
+
+export async function POST(request: NextRequest) {
+    const base = getVendureBase();
+    if (!base) {
+        return NextResponse.json(
+            {message: 'AI assistant is not configured.', products: [], collections: []},
+            {status: 503}
+        );
+    }
+    let body: { message?: string };
+    try {
+        body = await request.json();
+    } catch {
+        return NextResponse.json(
+            {message: 'Invalid JSON body.', products: [], collections: []},
+            {status: 400}
+        );
+    }
+    const message = typeof body?.message === 'string' ? body.message.trim() : '';
+    if (!message) {
+        return NextResponse.json(
+            {message: 'Send a message to search for products.', products: [], collections: []},
+            {status: 400}
+        );
+    }
+    const url = `${base}/ai-assistant/chat`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        return NextResponse.json(
+            {message: 'AI assistant request failed.', products: [], collections: []},
+            {status: 502}
+        );
+    }
+    const data = (await res.json()) as {
+        message: string;
+        products?: Array<{ id: string; name: string; slug: string; price: number; image: string | null }>;
+        collections?: Array<{ id: string; name: string; slug: string }>;
+    };
+    const assetsBase = `${base}/assets/`;
+    const products = (data.products || []).map((p) => ({
+        ...p,
+        image: p.image ? `${assetsBase}${p.image}` : null,
+    }));
+    return NextResponse.json({
+        message: data.message,
+        products,
+        collections: data.collections || [],
+    });
+}
