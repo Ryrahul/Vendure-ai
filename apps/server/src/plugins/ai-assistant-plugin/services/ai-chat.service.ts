@@ -43,6 +43,9 @@ export interface AiChatOrder {
     lines: Array<{
         productName: string;
         quantity: number;
+        translations?: {
+            name: string;
+        }[];
     }>;
     fulfillments: Array<{
         state: string;
@@ -588,9 +591,7 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
-    /**
-     * filterByPrice: filter by price range
-     */
+  // todo: do from search service 
     private async toolFilterByPrice(
         ctx: RequestContext,
         args: Record<string, unknown>,
@@ -696,7 +697,7 @@ export class AiChatService implements OnModuleInit {
     }
 
     /**
-     * getOrderHistory: fetches the customer's past orders using OrderService.
+     * getOrderHistory: fetches the customer's past orders using raw query for reliable relation loading.
      */
     private async toolGetOrderHistory(
         ctx: RequestContext,
@@ -710,28 +711,26 @@ export class AiChatService implements OnModuleInit {
         const take = Math.min(Number(args.take) || 5, 10);
 
         try {
-            const result = await this.orderService.findByCustomerId(ctx, customerId, {
-                take,
-                skip: 0,
-                sort: { orderPlacedAt: 'DESC' as any },
-                filter: {
-                    active: { eq: false },
-                },
-            }, [
-                'lines',
-                'lines.productVariant',
-                'lines.productVariant.translations',
-                'fulfillments',
-            ]);
+            const orderRepo = this.connection.rawConnection.getRepository(Order);
+            const orders = await orderRepo.createQueryBuilder('order')
+                .leftJoinAndSelect('order.lines', 'line')
+                .leftJoinAndSelect('line.productVariant', 'variant')
+                .leftJoinAndSelect('variant.translations', 'variantTranslation')
+                .leftJoinAndSelect('order.fulfillments', 'fulfillment')
+                .where('order.customerId = :customerId', { customerId })
+                .andWhere('order.active = :active', { active: false })
+                .orderBy('order.orderPlacedAt', 'DESC')
+                .take(take)
+                .getMany();
 
-            const orders = this.mapOrders(result.items);
+            const mapped = this.mapOrders(orders);
 
             return {
                 products: [],
                 collections: [],
-                orders,
-                summary: orders.length > 0
-                    ? `Found ${orders.length} order(s). ${orders.map(o => `Order ${o.code}: ${o.state}, total ${o.total}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
+                orders: mapped,
+                summary: mapped.length > 0
+                    ? `Found ${mapped.length} order(s). ${mapped.map(o => `Order ${o.code}: ${o.state}, total ${o.total}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
                     : 'No past orders found.',
             };
         } catch (e) {
@@ -760,28 +759,23 @@ export class AiChatService implements OnModuleInit {
         }
 
         try {
-            let order: Order | undefined;
-
-            const relations = [
-                'lines',
-                'lines.productVariant',
-                'lines.productVariant.translations',
-                'fulfillments',
-                'customer',
-            ] as any;
+            const orderRepo = this.connection.rawConnection.getRepository(Order);
+            let qb = orderRepo.createQueryBuilder('order')
+                .leftJoinAndSelect('order.lines', 'line')
+                .leftJoinAndSelect('line.productVariant', 'variant')
+                .leftJoinAndSelect('variant.translations', 'variantTranslation')
+                .leftJoinAndSelect('order.fulfillments', 'fulfillment')
+                .where('order.customerId = :customerId', { customerId });
 
             if (orderId) {
-                order = await this.orderService.findOne(ctx, orderId, relations);
+                qb = qb.andWhere('order.id = :orderId', { orderId });
             } else if (orderCode) {
-                order = await this.orderService.findOneByCode(ctx, orderCode, relations);
+                qb = qb.andWhere('order.code = :orderCode', { orderCode });
             }
+
+            const order = await qb.getOne();
 
             if (!order) {
-                return { products: [], collections: [], summary: `No order found with ${orderId ? `ID ${orderId}` : `code "${orderCode}"`}.`, orders: [] };
-            }
-
-            // Security: verify the order belongs to this customer
-            if ((order as any).customer?.id && String((order as any).customer.id) !== String(customerId)) {
                 return { products: [], collections: [], summary: `No order found with ${orderId ? `ID ${orderId}` : `code "${orderCode}"`}.`, orders: [] };
             }
 
@@ -809,24 +803,32 @@ export class AiChatService implements OnModuleInit {
     // ──────────────────────────────────────────────
 
     private mapOrders(orders: Order[]): AiChatOrder[] {
-        return orders.map(order => ({
-            id: String(order.id),
-            code: order.code,
-            state: order.state,
-            total: (order as any).totalWithTax ?? (order as any).total ?? 0,
-            orderPlacedAt: (order as any).orderPlacedAt ? new Date((order as any).orderPlacedAt).toISOString() : null,
-            lines: ((order as any).lines ?? []).map((line: any) => ({
-                productName: line.productVariant?.translations?.[0]?.name
-                    ?? line.productVariant?.name
-                    ?? 'Unknown product',
-                quantity: line.quantity ?? 0,
-            })),
-            fulfillments: ((order as any).fulfillments ?? []).map((f: any) => ({
-                state: f.state ?? 'Unknown',
-                method: f.method ?? 'Unknown',
-                trackingCode: f.trackingCode ?? null,
-            })),
-        }));
+        return orders.map(order => {
+            const lines = ((order as any).lines ?? []).map((line: any) => {
+                // Try multiple paths to get the product name
+                const name = line.productVariant?.translations?.[0]?.name
+                    || line.productVariant?.name
+                    || 'Unknown product';
+                return {
+                    productName: name,
+                    quantity: line.quantity ?? 0,
+                };
+            });
+
+            return {
+                id: String(order.id),
+                code: order.code,
+                state: order.state,
+                total: (order as any).totalWithTax ?? (order as any).total ?? 0,
+                orderPlacedAt: (order as any).orderPlacedAt ? new Date((order as any).orderPlacedAt).toISOString() : null,
+                lines,
+                fulfillments: ((order as any).fulfillments ?? []).map((f: any) => ({
+                    state: f.state ?? 'Unknown',
+                    method: f.method ?? 'Unknown',
+                    trackingCode: f.trackingCode ?? null,
+                })),
+            };
+        });
     }
 
     private mapProducts(products: Product[]): AiChatProduct[] {

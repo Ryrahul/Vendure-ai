@@ -1,6 +1,6 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Post, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
-import { RequestContextService, CustomerService } from '@vendure/core';
+import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
 import { AiChatService, AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder } from '../services/ai-chat.service';
 
 export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder } from '../services/ai-chat.service';
@@ -21,35 +21,46 @@ export interface AiChatResponse {
 
 /**
  * REST endpoint for the AI shopping assistant.
- * Uses OpenAI chat completions with tool calling for intelligent product discovery.
- * Requires an authenticated customer session (bearer token or cookie).
+ * Works for anonymous users (product search, browsing, cart).
+ * Order history/tracking requires an authenticated customer session.
  */
 @Controller('ai-assistant')
 export class AiAssistantController {
+    private readonly logger = new Logger(AiAssistantController.name);
+
     constructor(
         private requestContextService: RequestContextService,
         private customerService: CustomerService,
+        private sessionService: SessionService,
+        private configService: ConfigService,
         private aiChatService: AiChatService,
     ) {}
 
     @Post('chat')
     async chat(@Body() body: AiChatRequest, @Req() req: Request): Promise<AiChatResponse> {
-        // Create an authenticated RequestContext from the incoming request
-        const ctx = await this.requestContextService.fromRequest(req);
+        // Extract session token from the request (bearer or cookie)
+        const authHeader = req.get('Authorization');
+        const tokenMatch = authHeader?.trim().match(/^bearer\s(.+)$/i);
+        const sessionToken = tokenMatch?.[1];
 
-        // Resolve the active customer from the session
+        this.logger.log(`[AUTH] Session token present: ${!!sessionToken}`);
+
+        // Look up the session and create an authenticated RequestContext
+        let session;
+        if (sessionToken) {
+            session = await this.sessionService.getSessionFromToken(sessionToken);
+            this.logger.log(`[AUTH] Session found: ${!!session}, userId: ${session?.user?.id ?? 'NONE'}`);
+        }
+
+        const ctx = await this.requestContextService.fromRequest(req, undefined, undefined, session);
+        this.logger.log(`[AUTH] ctx.activeUserId: ${ctx.activeUserId ?? 'NONE'}`);
+
+        // Try to resolve the active customer — optional, only needed for order tools
         let customerId: string | number | undefined;
         if (ctx.activeUserId) {
             const customer = await this.customerService.findOneByUserId(ctx, ctx.activeUserId);
             customerId = customer?.id;
-        }
-
-        if (!customerId) {
-            return {
-                message: 'Please log in to use the shopping assistant. I need to know who you are to help you with orders and your cart.',
-                products: [],
-                collections: [],
-            };
+            this.logger.log(`[AUTH] customerId: ${customerId ?? 'NONE'}`);
         }
 
         const query = (body?.message ?? '').trim();
