@@ -11,7 +11,9 @@
     "build:dashboard": "vite build",
     "start:server": "node ./dist/index.js",
     "start:worker": "node ./dist/index-worker.js",
-    "start": "concurrently npm:start:*"
+    "start": "concurrently npm:start:*",
+    "populate": "ts-node ./src/populate.ts"
+
   },
   "dependencies": {
     "@vendure/asset-server-plugin": "3.5.4",
@@ -19,6 +21,7 @@
     "@vendure/dashboard": "3.5.4",
     "@vendure/email-plugin": "3.5.4",
     "@vendure/graphiql-plugin": "3.5.4",
+    "@vendure/testing": "^3.5.4",
     "dotenv": "17.3.1",
     "openai": "^6.22.0",
     "pg": "8.18.0"
