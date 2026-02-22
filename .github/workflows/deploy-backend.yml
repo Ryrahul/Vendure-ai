@@ -30,6 +30,9 @@ jobs:
       - name: Build backend
         run: npm run build -w server
 
+      - name: Build dashboard
+        run: npm run build:dashboard -w server
+
       - name: Package build artifacts
         run: |
           tar -czf deploy.tar.gz \
