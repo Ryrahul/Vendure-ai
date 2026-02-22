@@ -73,6 +73,19 @@ export async function POST(request: NextRequest) {
             lines: Array<{ productName: string; quantity: number }>;
             fulfillments: Array<{ state: string; method: string; trackingCode: string | null }>;
         }>;
+        activeOrder?: {
+            id: string;
+            code: string;
+            totalQuantity: number;
+            totalWithTax: number;
+            lines: Array<{
+                orderLineId: string;
+                productName: string;
+                variantId: string;
+                quantity: number;
+                linePriceWithTax: number;
+            }>;
+        };
     };
     const assetsBase = `${base}/assets/`;
     const products = (data.products || []).map((p) => ({
@@ -85,5 +98,6 @@ export async function POST(request: NextRequest) {
         collections: data.collections || [],
         addToCartAction: data.addToCartAction || null,
         orders: data.orders || null,
+        activeOrder: data.activeOrder || null,
     });
 }

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
-import { RequestContext, TransactionalConnection, Product, ProductVariant, Collection, OrderService, CustomerService, Order } from '@vendure/core';
+import { RequestContext, TransactionalConnection, Product, ProductVariant, Collection, OrderService, CustomerService, Order, OrderLine, isGraphQlErrorResult } from '@vendure/core';
 import { In } from 'typeorm';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions, MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE } from '../constants';
 import { EmbeddingService } from './embedding.service';
@@ -54,12 +54,31 @@ export interface AiChatOrder {
     }>;
 }
 
+/** A single line item in the active cart */
+export interface AiCartLine {
+    orderLineId: string;
+    productName: string;
+    variantId: string;
+    quantity: number;
+    linePriceWithTax: number;
+}
+
+/** The active order (cart) summary */
+export interface AiActiveOrder {
+    id: string;
+    code: string;
+    totalQuantity: number;
+    totalWithTax: number;
+    lines: AiCartLine[];
+}
+
 export interface ChatResult {
     message: string;
     products: AiChatProduct[];
     collections: AiChatCollection[];
     addToCartAction?: AddToCartAction;
     orders?: AiChatOrder[];
+    activeOrder?: AiActiveOrder;
 }
 
 // ──────────────────────────────────────────────
@@ -75,6 +94,7 @@ const SYSTEM_PROMPT = `You are a friendly and helpful shopping assistant for our
 - Greet customers, have polite small talk ONLY about shopping/store context
 - Answer questions about the store, shipping, returns (give general helpful answers)
 - Add items to the customer's cart when they ask
+- Show the customer their current cart and adjust quantities or remove items
 - Show the customer their order history
 - Track the status of their orders and provide fulfillment/tracking info
 
@@ -92,6 +112,8 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - \`getCollections\` — list product categories/collections
 - \`filterByPrice\` — filter by budget/price range
 - \`addToCart\` — add a product to the customer's cart
+- \`getActiveOrder\` — get the customer's current cart/active order with all line items (requires login)
+- \`adjustOrderLine\` — change the quantity of an item in the cart, or remove it by setting quantity to 0 (requires login)
 - \`getOrderHistory\` — show the customer's past orders (requires login)
 - \`trackOrder\` — get status and tracking info for an order (requires login)
 
@@ -106,6 +128,13 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - NEVER fabricate or guess a variantId. If you don't have the exact variantId from a previous search result, search for the product first.
 - Before calling addToCart, confirm with the user: mention the product name, price, and ask what quantity they want.
 - Once confirmed, call addToCart with the exact variantId from the search results and the requested quantity.
+
+## Rules for cart tools (getActiveOrder, adjustOrderLine):
+- Use \`getActiveOrder\` when the customer asks about their cart, what's in their cart, cart total, or wants to review before checkout.
+- Use \`adjustOrderLine\` to change quantities or remove items. You need the orderLineId from getActiveOrder results.
+- When adjusting quantity, set the new absolute quantity (not a delta). To remove an item, set quantity to 0.
+- Always call \`getActiveOrder\` first if you don't already have the orderLineId from the conversation context.
+- When showing the cart, summarize each item: product name, quantity, and line price. Also mention the cart total.
 
 ## Rules for order tools:
 - Use \`getOrderHistory\` when the customer asks about their past orders, recent purchases, or order history.
@@ -266,6 +295,39 @@ const TOOLS: ChatCompletionTool[] = [
             },
         },
     },
+    {
+        type: 'function',
+        function: {
+            name: 'getActiveOrder',
+            description: 'Get the customer\'s current shopping cart (active order). Returns all line items with product names, quantities, prices, and the cart total. Use when customer asks about their cart, wants to review items, or before adjusting quantities.',
+            parameters: {
+                type: 'object',
+                properties: {},
+                required: [],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'adjustOrderLine',
+            description: 'Adjust the quantity of an item in the customer\'s cart, or remove it. Requires the orderLineId from getActiveOrder results. Set quantity to 0 to remove the item. ALWAYS call getActiveOrder first if you do not have the orderLineId.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    orderLineId: {
+                        type: 'string',
+                        description: 'The order line ID from getActiveOrder results (numeric)',
+                    },
+                    quantity: {
+                        type: 'number',
+                        description: 'The new absolute quantity. Set to 0 to remove the item.',
+                    },
+                },
+                required: ['orderLineId', 'quantity'],
+            },
+        },
+    },
 ];
 
 @Injectable()
@@ -319,6 +381,7 @@ export class AiChatService implements OnModuleInit {
         let allCollections: AiChatCollection[] = [];
         let allOrders: AiChatOrder[] = [];
         let addToCartAction: AddToCartAction | undefined;
+        let activeOrder: AiActiveOrder | undefined;
 
         let maxIterations = 5;
         let response = await this.client.chat.completions.create({
@@ -372,6 +435,9 @@ export class AiChatService implements OnModuleInit {
                     if (toolResult.addToCartAction) {
                         addToCartAction = toolResult.addToCartAction;
                     }
+                    if (toolResult.activeOrder) {
+                        activeOrder = toolResult.activeOrder;
+                    }
 
                     messages.push({
                         role: 'tool',
@@ -397,6 +463,7 @@ export class AiChatService implements OnModuleInit {
                     collections: allCollections.slice(0, MAX_CHAT_COLLECTIONS),
                     addToCartAction,
                     orders: allOrders.length > 0 ? allOrders : undefined,
+                    activeOrder,
                 };
             }
         }
@@ -407,6 +474,7 @@ export class AiChatService implements OnModuleInit {
             collections: allCollections.slice(0, MAX_CHAT_COLLECTIONS),
             addToCartAction,
             orders: allOrders.length > 0 ? allOrders : undefined,
+            activeOrder,
         };
     }
 
@@ -419,7 +487,7 @@ export class AiChatService implements OnModuleInit {
         toolName: string,
         args: Record<string, unknown>,
         customerId?: string | number,
-    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; addToCartAction?: AddToCartAction; orders?: AiChatOrder[] }> {
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; addToCartAction?: AddToCartAction; orders?: AiChatOrder[]; activeOrder?: AiActiveOrder }> {
         switch (toolName) {
             case 'searchProducts':
                 return this.toolSearchProducts(ctx, args);
@@ -431,6 +499,10 @@ export class AiChatService implements OnModuleInit {
                 return this.toolFilterByPrice(ctx, args);
             case 'addToCart':
                 return this.toolAddToCart(ctx, args);
+            case 'getActiveOrder':
+                return this.toolGetActiveOrder(ctx, args);
+            case 'adjustOrderLine':
+                return this.toolAdjustOrderLine(ctx, args);
             case 'getOrderHistory':
                 return this.toolGetOrderHistory(ctx, args, customerId);
             case 'trackOrder':
@@ -747,6 +819,122 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
+    private async toolGetActiveOrder(
+        ctx: RequestContext,
+        _args: Record<string, unknown>,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; activeOrder?: AiActiveOrder }> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to view your cart.' };
+        }
+
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+
+            if (!order) {
+                return { products: [], collections: [], summary: 'Your cart is empty. No active order found.' };
+            }
+
+            const orderRepo = this.connection.rawConnection.getRepository(Order);
+            const fullOrder = await orderRepo.findOne({
+                where: { id: order.id },
+                relations: ['lines', 'lines.productVariant', 'lines.productVariant.translations', 'lines.featuredAsset'],
+            });
+
+            if (!fullOrder || !fullOrder.lines || fullOrder.lines.length === 0) {
+                return { products: [], collections: [], summary: 'Your cart is empty.' };
+            }
+
+            const activeOrder = this.mapActiveOrder(fullOrder);
+
+            const linesSummary = activeOrder.lines
+                .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId}, variantId: ${l.variantId}, linePrice: ${l.linePriceWithTax})`)
+                .join(', ');
+
+            return {
+                products: [],
+                collections: [],
+                activeOrder,
+                summary: `Cart has ${activeOrder.totalQuantity} item(s), total: ${activeOrder.totalWithTax}. Lines: ${linesSummary}. Use the orderLineId when adjusting quantities.`,
+            };
+        } catch (e) {
+            this.logger.error(`Error fetching active order: ${e}`);
+            return { products: [], collections: [], summary: 'Error fetching your cart. Please try again.' };
+        }
+    }
+
+   
+    private async toolAdjustOrderLine(
+        ctx: RequestContext,
+        args: Record<string, unknown>,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; activeOrder?: AiActiveOrder }> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to modify your cart.' };
+        }
+
+        const orderLineId = String(args.orderLineId ?? '').trim();
+        const quantity = Number(args.quantity ?? -1);
+
+        if (!orderLineId || !/^\d+$/.test(orderLineId)) {
+            return { products: [], collections: [], summary: 'Error: Invalid orderLineId. Use getActiveOrder first to get the correct orderLineId.' };
+        }
+        if (quantity < 0) {
+            return { products: [], collections: [], summary: 'Error: quantity must be 0 or greater. Set to 0 to remove the item.' };
+        }
+
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            if (!order) {
+                return { products: [], collections: [], summary: 'Error: No active order found. Your cart is empty.' };
+            }
+
+            let result;
+            if (quantity === 0) {
+                result = await this.orderService.removeItemFromOrder(ctx, order.id, Number(orderLineId));
+            } else {
+                result = await this.orderService.adjustOrderLine(ctx, order.id, Number(orderLineId), quantity);
+            }
+
+            if (isGraphQlErrorResult(result)) {
+                const errorMsg = (result as any).message ?? (result as any).errorCode ?? 'Unknown error';
+                this.logger.warn(`adjustOrderLine error: ${errorMsg}`);
+                return { products: [], collections: [], summary: `Error adjusting cart: ${errorMsg}` };
+            }
+
+            const orderRepo = this.connection.rawConnection.getRepository(Order);
+            const fullOrder = await orderRepo.findOne({
+                where: { id: order.id },
+                relations: ['lines', 'lines.productVariant', 'lines.productVariant.translations', 'lines.featuredAsset'],
+            });
+
+            if (!fullOrder || !fullOrder.lines || fullOrder.lines.length === 0) {
+                return {
+                    products: [],
+                    collections: [],
+                    activeOrder: { id: String(order.id), code: order.code, totalQuantity: 0, totalWithTax: 0, lines: [] },
+                    summary: quantity === 0
+                        ? 'Item removed. Your cart is now empty.'
+                        : 'Cart updated. Your cart is now empty.',
+                };
+            }
+
+            const activeOrder = this.mapActiveOrder(fullOrder);
+            const action = quantity === 0 ? 'removed' : `quantity updated to ${quantity}`;
+            const linesSummary = activeOrder.lines
+                .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId})`)
+                .join(', ');
+
+            return {
+                products: [],
+                collections: [],
+                activeOrder,
+                summary: `Item ${action}. Cart now has ${activeOrder.totalQuantity} item(s), total: ${activeOrder.totalWithTax}. Lines: ${linesSummary}`,
+            };
+        } catch (e) {
+            this.logger.error(`Error adjusting order line: ${e}`);
+            return { products: [], collections: [], summary: 'Error adjusting your cart. Please try again.' };
+        }
+    }
+
     /**
      * getOrderHistory: fetches the customer's past orders using raw query for reliable relation loading.
      */
@@ -790,9 +978,6 @@ export class AiChatService implements OnModuleInit {
         }
     }
 
-    /**
-     * trackOrder: gets status and tracking info for a specific order.
-     */
     private async toolTrackOrder(
         ctx: RequestContext,
         args: Record<string, unknown>,
@@ -880,6 +1065,29 @@ export class AiChatService implements OnModuleInit {
                 })),
             };
         });
+    }
+
+    private mapActiveOrder(order: Order): AiActiveOrder {
+        const lines: AiCartLine[] = ((order as any).lines ?? []).map((line: any) => {
+            const name = line.productVariant?.translations?.[0]?.name
+                || line.productVariant?.name
+                || 'Unknown product';
+            return {
+                orderLineId: String(line.id),
+                productName: name,
+                variantId: String(line.productVariant?.id ?? ''),
+                quantity: line.quantity ?? 0,
+                linePriceWithTax: line.linePriceWithTax ?? line.linePrice ?? 0,
+            };
+        });
+
+        return {
+            id: String(order.id),
+            code: order.code,
+            totalQuantity: (order as any).totalQuantity ?? lines.reduce((sum: number, l: AiCartLine) => sum + l.quantity, 0),
+            totalWithTax: (order as any).totalWithTax ?? 0,
+            lines,
+        };
     }
 
     private mapProducts(products: Product[]): AiChatProduct[] {

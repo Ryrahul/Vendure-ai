@@ -11,6 +11,7 @@ This AI Agent is a **proper ecommerce shopping assistant** for Vendure that:
 - Uses LLM (GPT-4o-mini) with tool calling to intelligently find products
 - Searches products via keyword search, semantic/vector search, collection browsing, and price filtering
 - Adds items to cart through conversational interaction
+- Lets customers view, adjust, and manage their cart (view cart, change quantities, remove items)
 - Lets customers view their order history and track orders (requires login)
 - Politely refuses off-topic questions (politics, celebrities, general knowledge, etc.)
 - Never fabricates product data — all product info comes from the database
@@ -41,18 +42,18 @@ AiChatService (with authenticated RequestContext)
 OpenAI Chat Completions API (GPT-4o-mini)
   - System prompt (store-focused, off-topic rejection)
   - Conversation history
-  - Tool definitions (7 tools)
+  - Tool definitions (9 tools)
        ↓
 LLM decides: respond directly OR call tools
        ↓
 If tool calls → execute against Vendure DB/Shop API → return results to LLM
   - Product tools: search DB directly
   - Order tools: query via Shop API with customer's session context
-  - Cart tools: return action signal for frontend
+  - Cart tools: add to cart (action signal for frontend), view/adjust cart (server-side via OrderService)
        ↓
 LLM formats final conversational response
        ↓
-Return: { message, products[], collections[], orders[], addToCartAction? }
+Return: { message, products[], collections[], orders[], addToCartAction?, activeOrder? }
 ```
 
 ---
@@ -72,7 +73,7 @@ Vendure services handle all data retrieval:
 - Vector/semantic search (pgvector embeddings)
 - Collection browsing
 - Price filtering
-- Cart operations (add to cart via frontend action signals)
+- Cart operations (add to cart via frontend action signals, view/adjust/remove via OrderService)
 - Order history & tracking (via Vendure Shop API, scoped to logged-in customer)
 - No hallucinated data — empty results are reported honestly
 
@@ -81,6 +82,7 @@ The bot ONLY discusses:
 - Products, collections, prices
 - Store-related topics (shipping, returns, how to shop)
 - Shopping assistance (gift suggestions, recommendations)
+- Cart management (view cart, adjust quantities, remove items)
 - Order history and order tracking (for logged-in customers)
 
 The bot REFUSES to discuss:
@@ -130,18 +132,18 @@ The bot REFUSES to discuss:
 **Use for:** "what categories do you have", "show collections", "browse electronics"
 
 ### 4. filterByPrice
-**Description:** Filter products by price range/budget.
+**Description:** Filter products by price range/budget. Uses Vendure's FulltextSearchService for keyword matching (supports collection names like "electronics", facets, etc.) and applies price filtering in memory. Falls back to a raw DB query with collection name matching when the search service is unavailable.
 
 **Parameters:**
 ```json
 {
   "minPrice": "number (optional) — min price in smallest currency unit",
   "maxPrice": "number (optional) — max price in smallest currency unit",
-  "query": "string (optional) — keyword to narrow results"
+  "query": "string (optional) — keyword to narrow results (matches product names, descriptions, and collection names)"
 }
 ```
 
-**Use for:** "under $50", "between 100 and 200", "laptop under 500", "my budget is 30k"
+**Use for:** "under $50", "between 100 and 200", "laptop under 500", "electronics under 50", "my budget is 30k"
 
 ### 5. addToCart
 **Description:** Adds a product variant to the customer's cart. Returns an action signal for the frontend to execute the actual `addItemToOrder` mutation with the customer's session. The LLM must confirm product name, price, and quantity with the user before calling this tool.
@@ -187,6 +189,30 @@ The bot REFUSES to discuss:
 
 **Use for:** "where's my order", "track order A1B2C3", "what's the status of my last order", "has my order shipped"
 
+### 8. getActiveOrder
+**Description:** Fetches the customer's current shopping cart (active order) with all line items. Uses Vendure's `OrderService.getActiveOrderForUser()` to get the order in `AddingItems` state. Returns line items with product names, quantities, prices, orderLineIds, and the cart total. **Requires authenticated customer session.**
+
+**Parameters:**
+```json
+{}
+```
+No parameters — always returns the current active order for the authenticated user.
+
+**Use for:** "what's in my cart", "show me my cart", "cart summary", "review my cart", "how much is my cart total"
+
+### 9. adjustOrderLine
+**Description:** Adjusts the quantity of an existing line item in the customer's cart, or removes it. Uses Vendure's `OrderService.adjustOrderLine()` or `OrderService.removeItemFromOrder()`. Requires the `orderLineId` from `getActiveOrder` results. Setting quantity to 0 removes the item. **Requires authenticated customer session.**
+
+**Parameters:**
+```json
+{
+  "orderLineId": "string (required) — order line ID from getActiveOrder results",
+  "quantity": "number (required) — new absolute quantity (0 to remove)"
+}
+```
+
+**Use for:** "remove that from my cart", "change quantity to 3", "I want 2 of those instead", "remove the laptop from my cart"
+
 ---
 
 ## User Intent → Behavior Mapping
@@ -203,6 +229,9 @@ The bot REFUSES to discuss:
 | "laptop under 500" | Calls searchProducts + filterByPrice |
 | "show me collections" | Calls getCollections |
 | "add this to my cart" | Calls addToCart with variant from context |
+| "what's in my cart?" | Calls getActiveOrder |
+| "remove the laptop from my cart" | Calls getActiveOrder (if needed), then adjustOrderLine with quantity 0 |
+| "change quantity to 3" | Calls getActiveOrder (if needed), then adjustOrderLine with quantity 3 |
 | "show my orders" | Calls getOrderHistory |
 | "where's my order?" | Calls trackOrder (latest order or by code) |
 | "track order A1B2C3" | Calls trackOrder with orderCode |
@@ -264,7 +293,22 @@ The backend always returns:
         }
       ]
     }
-  ]
+  ],
+  "activeOrder": {
+    "id": "string",
+    "code": "string",
+    "totalQuantity": "number",
+    "totalWithTax": "number (smallest currency unit)",
+    "lines": [
+      {
+        "orderLineId": "string",
+        "productName": "string",
+        "variantId": "string",
+        "quantity": "number",
+        "linePriceWithTax": "number (smallest currency unit)"
+      }
+    ]
+  }
 }
 ```
 
@@ -293,6 +337,9 @@ The frontend sends conversation history with each request for multi-turn context
 This allows the bot to understand context like:
 - "Show me laptops" → "Now show me the cheaper ones" (understands "cheaper laptops")
 - "What collections do you have?" → "Show me electronics" (understands context)
+- "Show my cart" → "Remove the first one" (has orderLineIds from previous getActiveOrder)
+
+The frontend enriches assistant messages in the history with product metadata (`variantId`, `price`) and cart data (`orderLineId`, `variantId`) so the LLM can reference these in subsequent turns without needing to call tools again.
 
 ---
 
@@ -350,7 +397,6 @@ AiAssistantPlugin.init({
 - Set shipping/billing address from chat
 - Select shipping method conversationally
 - Complete checkout flow end-to-end through the assistant
-- Cart summary and remove from cart tools
 
 **Phase 3:**
 - Personalized recommendations based on order history
@@ -368,6 +414,8 @@ AiAssistantPlugin.init({
 - Collection browsing (getCollections)
 - Budget/price filtering (filterByPrice)
 - Add to cart (addToCart — frontend action signal)
+- Cart summary (getActiveOrder — view current cart with line items, quantities, totals)
+- Cart management (adjustOrderLine — change quantities, remove items from cart)
 - Order history (getOrderHistory — authenticated customers)
 - Order tracking (trackOrder — fulfillment state, tracking code)
 - Authentication-gated access (logged-in customers only)
@@ -379,5 +427,4 @@ AiAssistantPlugin.init({
 
 **Not yet covered:**
 - Checkout flow (address, shipping method, payment)
-- Cart removal / cart summary
 - Streaming responses

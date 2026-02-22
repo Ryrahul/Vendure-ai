@@ -9,6 +9,7 @@ import {ScrollArea} from '@/components/ui/scroll-area';
 import {formatPrice} from '@/lib/format';
 import Link from 'next/link';
 import Image from 'next/image';
+import {useRouter} from 'next/navigation';
 import {SendIcon, Loader2Icon, StoreIcon, SparklesIcon, ShoppingCartIcon, CheckIcon, PlusIcon, MinusIcon} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
@@ -34,12 +35,29 @@ interface AddToCartAction {
     productName?: string;
 }
 
+export interface ChatCartLine {
+    orderLineId: string;
+    productName: string;
+    variantId: string;
+    quantity: number;
+    linePriceWithTax: number;
+}
+
+export interface ChatActiveOrder {
+    id: string;
+    code: string;
+    totalQuantity: number;
+    totalWithTax: number;
+    lines: ChatCartLine[];
+}
+
 export interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
     products?: ChatProduct[];
     collections?: ChatCollection[];
     addToCartAction?: AddToCartAction;
+    activeOrder?: ChatActiveOrder;
 }
 
 interface ChatPanelProps {
@@ -54,6 +72,7 @@ const QUICK_ACTIONS = [
 ];
 
 export function ChatPanel({onClose}: ChatPanelProps) {
+    const router = useRouter();
     const [messages, setMessages] = React.useState<ChatMessage[]>([]);
     const [input, setInput] = React.useState('');
     const [loading, setLoading] = React.useState(false);
@@ -105,7 +124,7 @@ export function ChatPanel({onClose}: ChatPanelProps) {
         setLoading(true);
 
         try {
-            // Build history with product data so LLM knows variantIds from previous turns
+            // Build history with product/cart data so LLM knows variantIds and orderLineIds from previous turns
             const history = messages.map((msg) => {
                 let content = msg.content;
                 if (msg.role === 'assistant' && msg.products && msg.products.length > 0) {
@@ -113,6 +132,12 @@ export function ChatPanel({onClose}: ChatPanelProps) {
                         .map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${p.price})`)
                         .join(', ');
                     content += `\n[Products shown: ${productList}]`;
+                }
+                if (msg.role === 'assistant' && msg.activeOrder && msg.activeOrder.lines.length > 0) {
+                    const cartLines = msg.activeOrder.lines
+                        .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId}, variantId: ${l.variantId})`)
+                        .join(', ');
+                    content += `\n[Cart: ${cartLines}, total: ${msg.activeOrder.totalWithTax}]`;
                 }
                 return { role: msg.role, content };
             });
@@ -126,6 +151,7 @@ export function ChatPanel({onClose}: ChatPanelProps) {
             const products: ChatProduct[] = data.products ?? [];
             const collections: ChatCollection[] = data.collections ?? [];
             const addToCartAction: AddToCartAction | null = data.addToCartAction ?? null;
+            const activeOrder: ChatActiveOrder | null = data.activeOrder ?? null;
 
             setMessages((prev) => [
                 ...prev,
@@ -135,6 +161,7 @@ export function ChatPanel({onClose}: ChatPanelProps) {
                     products: products.length ? products : undefined,
                     collections: collections.length ? collections : undefined,
                     addToCartAction: addToCartAction ?? undefined,
+                    activeOrder: activeOrder ?? undefined,
                 },
             ]);
 
@@ -146,6 +173,11 @@ export function ChatPanel({onClose}: ChatPanelProps) {
                     addToCartAction.productName ?? 'Item',
                     addToCartAction.quantity,
                 );
+            }
+
+            // If cart was modified server-side (adjustOrderLine/removeItem), refresh to update navbar cart count etc.
+            if (activeOrder) {
+                router.refresh();
             }
         } catch {
             setMessages((prev) => [
@@ -235,6 +267,30 @@ export function ChatPanel({onClose}: ChatPanelProps) {
                                                 {c.name}
                                             </Link>
                                         ))}
+                                    </div>
+                                )}
+                                {msg.role === 'assistant' && msg.activeOrder && msg.activeOrder.lines.length > 0 && (
+                                    <div className="mt-3 rounded-md border bg-background p-3 space-y-2">
+                                        <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <ShoppingCartIcon className="h-3 w-3" />
+                                                Your Cart ({msg.activeOrder.totalQuantity} item{msg.activeOrder.totalQuantity !== 1 ? 's' : ''})
+                                            </span>
+                                            <span className="font-semibold text-foreground">
+                                                {formatPrice(msg.activeOrder.totalWithTax)}
+                                            </span>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            {msg.activeOrder.lines.map((line) => (
+                                                <div key={line.orderLineId} className="flex items-center justify-between text-sm">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{line.quantity}x</span>
+                                                        <span className="truncate">{line.productName}</span>
+                                                    </div>
+                                                    <span className="shrink-0 text-xs text-muted-foreground ml-2">{formatPrice(line.linePriceWithTax)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                                 {msg.role === 'assistant' && msg.products && msg.products.length > 0 && (

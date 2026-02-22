@@ -1,9 +1,9 @@
 import { Body, Controller, Post, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
 import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
-import { AiChatService, AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder } from '../services/ai-chat.service';
+import { AiChatService, AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, AiCartLine } from '../services/ai-chat.service';
 
-export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder } from '../services/ai-chat.service';
+export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, AiCartLine } from '../services/ai-chat.service';
 
 export interface AiChatRequest {
     message: string;
@@ -17,6 +17,7 @@ export interface AiChatResponse {
     collections: AiChatCollection[];
     addToCartAction?: AddToCartAction;
     orders?: AiChatOrder[];
+    activeOrder?: AiActiveOrder;
 }
 
 /**
@@ -87,6 +88,7 @@ export class AiAssistantController {
             collections: result.collections,
             addToCartAction: result.addToCartAction,
             orders: result.orders,
+            activeOrder: result.activeOrder,
         };
     }
 }
