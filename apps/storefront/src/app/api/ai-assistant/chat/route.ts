@@ -1,4 +1,5 @@
 import {NextRequest, NextResponse} from 'next/server';
+import {getAuthToken} from '@/lib/auth';
 
 const VENDURE_API_URL = process.env.VENDURE_SHOP_API_URL || process.env.NEXT_PUBLIC_VENDURE_SHOP_API_URL;
 
@@ -34,10 +35,20 @@ export async function POST(request: NextRequest) {
 
     const history = Array.isArray(body?.history) ? body.history : [];
 
+    // Build headers, forwarding the auth token if present
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
+
+    const authToken = await getAuthToken();
+    if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     const url = `${base}/ai-assistant/chat`;
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ message, history }),
     });
     if (!res.ok) {
@@ -53,6 +64,15 @@ export async function POST(request: NextRequest) {
         products?: Array<{ id: string; name: string; slug: string; price: number; image: string | null; variantId: string }>;
         collections?: Array<{ id: string; name: string; slug: string }>;
         addToCartAction?: { variantId: string; quantity: number; productName?: string };
+        orders?: Array<{
+            id: string;
+            code: string;
+            state: string;
+            total: number;
+            orderPlacedAt: string | null;
+            lines: Array<{ productName: string; quantity: number }>;
+            fulfillments: Array<{ state: string; method: string; trackingCode: string | null }>;
+        }>;
     };
     const assetsBase = `${base}/assets/`;
     const products = (data.products || []).map((p) => ({
@@ -64,5 +84,6 @@ export async function POST(request: NextRequest) {
         products,
         collections: data.collections || [],
         addToCartAction: data.addToCartAction || null,
+        orders: data.orders || null,
     });
 }

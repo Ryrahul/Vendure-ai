@@ -39,6 +39,7 @@ export const config: VendureConfig = {
         cookieOptions: {
           secret: process.env.COOKIE_SECRET,
         },
+        requireVerification: false,
     },
     dbConnectionOptions: {
         type: 'postgres',

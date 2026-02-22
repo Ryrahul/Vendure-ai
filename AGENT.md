@@ -1,4 +1,4 @@
-# Vendure AI Commerce Agent – Phase 1
+# Vendure AI Commerce Agent
 ## Intelligent Shopping Assistant with LLM Orchestration
 
 ---
@@ -10,35 +10,49 @@ This AI Agent is a **proper ecommerce shopping assistant** for Vendure that:
 - Has natural conversations about the store, products, and shopping
 - Uses LLM (GPT-4o-mini) with tool calling to intelligently find products
 - Searches products via keyword search, semantic/vector search, collection browsing, and price filtering
+- Adds items to cart through conversational interaction
+- Lets customers view their order history and track orders (requires login)
 - Politely refuses off-topic questions (politics, celebrities, general knowledge, etc.)
 - Never fabricates product data — all product info comes from the database
 - Maintains conversation context across multiple messages
+
+### Authentication Requirement
+
+The AI assistant **only works for logged-in customers**. The chat endpoint must receive a valid session token (via cookie or bearer token) from the authenticated customer. If no active customer session is found, the assistant should return an error prompting the user to log in. This ensures:
+- Order history and tracking are scoped to the authenticated customer
+- Cart operations are tied to the correct customer session
+- No anonymous users can access order-related features
 
 ---
 
 ## Architecture Overview
 
 ```
-User Message + Conversation History
+User Message + Conversation History + Auth Token (cookie/bearer)
        ↓
-Next.js API Route (proxy)
+Next.js API Route (proxy, forwards auth headers)
        ↓
 Vendure REST Controller (POST /ai-assistant/chat)
+  - Extracts authenticated customer session from request
+  - Rejects unauthenticated requests
        ↓
-AiChatService
+AiChatService (with authenticated RequestContext)
        ↓
 OpenAI Chat Completions API (GPT-4o-mini)
   - System prompt (store-focused, off-topic rejection)
   - Conversation history
-  - Tool definitions
+  - Tool definitions (7 tools)
        ↓
 LLM decides: respond directly OR call tools
        ↓
-If tool calls → execute against Vendure DB → return results to LLM
+If tool calls → execute against Vendure DB/Shop API → return results to LLM
+  - Product tools: search DB directly
+  - Order tools: query via Shop API with customer's session context
+  - Cart tools: return action signal for frontend
        ↓
 LLM formats final conversational response
        ↓
-Return: { message, products[], collections[] }
+Return: { message, products[], collections[], orders[], addToCartAction? }
 ```
 
 ---
@@ -58,6 +72,8 @@ Vendure services handle all data retrieval:
 - Vector/semantic search (pgvector embeddings)
 - Collection browsing
 - Price filtering
+- Cart operations (add to cart via frontend action signals)
+- Order history & tracking (via Vendure Shop API, scoped to logged-in customer)
 - No hallucinated data — empty results are reported honestly
 
 ### 3. Store-Only Conversation Scope
@@ -65,6 +81,7 @@ The bot ONLY discusses:
 - Products, collections, prices
 - Store-related topics (shipping, returns, how to shop)
 - Shopping assistance (gift suggestions, recommendations)
+- Order history and order tracking (for logged-in customers)
 
 The bot REFUSES to discuss:
 - General knowledge (who is Elon Musk, capital of France)
@@ -126,6 +143,50 @@ The bot REFUSES to discuss:
 
 **Use for:** "under $50", "between 100 and 200", "laptop under 500", "my budget is 30k"
 
+### 5. addToCart
+**Description:** Adds a product variant to the customer's cart. Returns an action signal for the frontend to execute the actual `addItemToOrder` mutation with the customer's session. The LLM must confirm product name, price, and quantity with the user before calling this tool.
+
+**Parameters:**
+```json
+{
+  "variantId": "string (required) — numeric variant ID from a prior search",
+  "quantity": "number (optional) — default 1",
+  "productName": "string (optional) — product name for confirmation"
+}
+```
+
+**Use for:** "add this to my cart", "I'll take 2 of those", "buy the first one"
+
+### 6. getOrderHistory
+**Description:** Fetches the logged-in customer's past orders. Uses the Vendure Shop API `activeCustomer { orders }` query. Returns a list of orders with code, state, total, date placed, and line items. **Requires authenticated customer session.**
+
+**Parameters:**
+```json
+{
+  "take": "number (optional) — max orders to return, default 5",
+  "skip": "number (optional) — offset for pagination"
+}
+```
+
+**Vendure API:** `activeCustomer { orders(options: { take, skip, sort: { orderPlacedAt: DESC } }) { items { id code state totalWithTax orderPlacedAt lines { productVariant { name } quantity } } } }`
+
+**Use for:** "show my orders", "what have I ordered before", "my recent purchases", "order history"
+
+### 7. trackOrder
+**Description:** Gets the current status and tracking information for a specific order. Uses the Vendure Shop API `order(id)` query (only returns orders belonging to the authenticated customer). Returns order state, fulfillment status, tracking code, and shipping details. **Requires authenticated customer session.**
+
+**Parameters:**
+```json
+{
+  "orderId": "string (optional) — order ID",
+  "orderCode": "string (optional) — order code (e.g. 'A1B2C3')"
+}
+```
+
+**Vendure API:** `order(id) { code state orderPlacedAt totalWithTax fulfillments { state method trackingCode } shippingAddress { fullName streetLine1 city postalCode country } lines { productVariant { name } quantity } }`
+
+**Use for:** "where's my order", "track order A1B2C3", "what's the status of my last order", "has my order shipped"
+
 ---
 
 ## User Intent → Behavior Mapping
@@ -135,10 +196,17 @@ The bot REFUSES to discuss:
 | "Hi", "Hello" | Greets warmly, asks how it can help |
 | "What do you sell?" | Calls getCollections, describes the store |
 | "laptop", "gaming mouse" | Calls searchProducts with keyword |
-| "gift for dad" | Calls vectorSearch for semantic match |
+| "gift for my photographer friend" | Calls vectorSearch for semantic match |
+| "suggest me some laptops" | Calls searchProducts with keyword |
+| "I need something for my house" | Calls vectorSearch for semantic match |
 | "under $50" | Calls filterByPrice |
 | "laptop under 500" | Calls searchProducts + filterByPrice |
 | "show me collections" | Calls getCollections |
+| "add this to my cart" | Calls addToCart with variant from context |
+| "show my orders" | Calls getOrderHistory |
+| "where's my order?" | Calls trackOrder (latest order or by code) |
+| "track order A1B2C3" | Calls trackOrder with orderCode |
+| "has my order shipped?" | Calls trackOrder, reports fulfillment state |
 | "Who is Elon Musk?" | Politely refuses, redirects to shopping |
 | "Write me a poem" | Politely refuses, redirects to shopping |
 | "Do you have returns?" | Answers with general store info (no tool needed) |
@@ -159,7 +227,8 @@ The backend always returns:
       "name": "string",
       "slug": "string",
       "price": "number (smallest currency unit)",
-      "image": "string | null"
+      "image": "string | null",
+      "variantId": "string"
     }
   ],
   "collections": [
@@ -167,6 +236,33 @@ The backend always returns:
       "id": "string",
       "name": "string",
       "slug": "string"
+    }
+  ],
+  "addToCartAction": {
+    "variantId": "string",
+    "quantity": "number",
+    "productName": "string"
+  },
+  "orders": [
+    {
+      "id": "string",
+      "code": "string",
+      "state": "string",
+      "total": "number",
+      "orderPlacedAt": "string (ISO date)",
+      "lines": [
+        {
+          "productName": "string",
+          "quantity": "number"
+        }
+      ],
+      "fulfillments": [
+        {
+          "state": "string",
+          "method": "string",
+          "trackingCode": "string | null"
+        }
+      ]
     }
   ]
 }
@@ -208,6 +304,7 @@ The system prompt enforces:
 3. **Off-topic rejection** — politely redirect non-store questions
 4. **Honest empty results** — say "not found" when tools return nothing
 5. **Natural conversation** — be friendly, concise, helpful
+6. **Auth-aware tools** — order history and tracking tools require a logged-in customer; if no session, the LLM should inform the user to log in first
 
 ---
 
@@ -220,6 +317,8 @@ The system prompt enforces:
 5. Off-topic questions are rejected (not answered with disclaimers)
 6. Empty results are reported honestly
 7. Conversation history is text-only (no tool call details sent to frontend)
+8. **Authentication required** — the assistant only works for logged-in customers. The controller must extract the customer session from the request (cookie/bearer token) and pass it as a proper Vendure `RequestContext`. If no authenticated customer is found, return an error
+9. Order data is strictly scoped to the authenticated customer — a customer can never see another customer's orders
 
 ---
 
@@ -247,33 +346,38 @@ AiAssistantPlugin.init({
 
 ## Extensibility Roadmap
 
-**Phase 2:**
-- Cart management tools (add to cart, remove, summary)
-- Order-related queries
+**Phase 2 (next):**
+- Set shipping/billing address from chat
+- Select shipping method conversationally
+- Complete checkout flow end-to-end through the assistant
+- Cart summary and remove from cart tools
 
 **Phase 3:**
-- Order tracking
-- Personalized recommendations
+- Personalized recommendations based on order history
 - Analytics & conversation insights
 - Streaming responses
+- Multi-language support
 
 ---
 
-## Scope Covered (Phase 1)
+## Scope Covered
 
 - LLM-orchestrated product discovery with tool calling
 - Keyword search (searchProducts)
 - Semantic/vector search (vectorSearch)
 - Collection browsing (getCollections)
 - Budget/price filtering (filterByPrice)
+- Add to cart (addToCart — frontend action signal)
+- Order history (getOrderHistory — authenticated customers)
+- Order tracking (trackOrder — fulfillment state, tracking code)
+- Authentication-gated access (logged-in customers only)
 - Natural store conversations (greetings, store info, help)
 - Off-topic rejection (polite redirects)
 - Conversation history/context
 - Structured safe output
 - "Not available" when products not in catalog
 
-**Not covered:**
-- Cart mutations
-- Checkout
-- Order management
+**Not yet covered:**
+- Checkout flow (address, shipping method, payment)
+- Cart removal / cart summary
 - Streaming responses

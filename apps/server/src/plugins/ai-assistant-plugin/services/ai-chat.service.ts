@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
-import { RequestContext, TransactionalConnection, Product, ProductVariant, Collection } from '@vendure/core';
+import { RequestContext, TransactionalConnection, Product, ProductVariant, Collection, OrderService, CustomerService, Order } from '@vendure/core';
 import { In } from 'typeorm';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions, MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE } from '../constants';
 import { EmbeddingService } from './embedding.service';
@@ -33,17 +33,36 @@ export interface AddToCartAction {
     productName?: string;
 }
 
+/** Structured order returned in chat responses */
+export interface AiChatOrder {
+    id: string;
+    code: string;
+    state: string;
+    total: number;
+    orderPlacedAt: string | null;
+    lines: Array<{
+        productName: string;
+        quantity: number;
+    }>;
+    fulfillments: Array<{
+        state: string;
+        method: string;
+        trackingCode: string | null;
+    }>;
+}
+
 export interface ChatResult {
     message: string;
     products: AiChatProduct[];
     collections: AiChatCollection[];
     addToCartAction?: AddToCartAction;
+    orders?: AiChatOrder[];
 }
 
 // ──────────────────────────────────────────────
 // System prompt
 // ──────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a friendly and helpful shopping assistant for our online store. Your job is to help customers find products, browse collections, and answer questions about the store.
+const SYSTEM_PROMPT = `You are a friendly and helpful shopping assistant for our online store. Your job is to help customers find products, browse collections, manage their cart, view order history, and track their orders.
 
 ## What you CAN do:
 - Help customers find products using search, semantic search, or browsing by collections
@@ -53,6 +72,8 @@ const SYSTEM_PROMPT = `You are a friendly and helpful shopping assistant for our
 - Greet customers, have polite small talk ONLY about shopping/store context
 - Answer questions about the store, shipping, returns (give general helpful answers)
 - Add items to the customer's cart when they ask
+- Show the customer their order history
+- Track the status of their orders and provide fulfillment/tracking info
 
 ## What you MUST NOT do:
 - Answer questions unrelated to the store (e.g. "who is Elon Musk", "capital of France", "write me a poem")
@@ -68,6 +89,8 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - \`getCollections\` — list product categories/collections
 - \`filterByPrice\` — filter by budget/price range
 - \`addToCart\` — add a product to the customer's cart
+- \`getOrderHistory\` — show the customer's past orders (requires login)
+- \`trackOrder\` — get status and tracking info for an order (requires login)
 
 ## CRITICAL response rules for products:
 - When tools return product data, do NOT list product names, prices, or images in your text. The UI automatically renders product cards with images, names, prices, and "Add to Cart" buttons below your message.
@@ -80,6 +103,13 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - NEVER fabricate or guess a variantId. If you don't have the exact variantId from a previous search result, search for the product first.
 - Before calling addToCart, confirm with the user: mention the product name, price, and ask what quantity they want.
 - Once confirmed, call addToCart with the exact variantId from the search results and the requested quantity.
+
+## Rules for order tools:
+- Use \`getOrderHistory\` when the customer asks about their past orders, recent purchases, or order history.
+- Use \`trackOrder\` when the customer asks about a specific order's status, tracking, or shipment.
+- When showing order history, summarize each order briefly: order code, status, total, and what they ordered.
+- When tracking an order, mention the order state, fulfillment status, tracking code (if available), and items.
+- If a customer says "where's my order?" or "track my order" without specifying which one, use getOrderHistory first to find their most recent order, then use trackOrder on that order.
 
 ## IMPORTANT — matching products from conversation context:
 - When the user refers to a product that was ALREADY shown in the conversation (from a previous search), use the variantId you already have. Do NOT search again.
@@ -195,6 +225,44 @@ const TOOLS: ChatCompletionTool[] = [
             },
         },
     },
+    {
+        type: 'function',
+        function: {
+            name: 'getOrderHistory',
+            description: 'Get the customer\'s past orders. Returns a list of orders with code, state, total, date, and items ordered. Use when customer asks about their order history or past purchases.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    take: {
+                        type: 'number',
+                        description: 'Max number of orders to return (default 5, max 10)',
+                    },
+                },
+                required: [],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'trackOrder',
+            description: 'Get the status and tracking information for a specific order. Returns order state, fulfillment status, tracking code, and items. Use when customer asks about the status of an order or wants tracking info.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    orderId: {
+                        type: 'string',
+                        description: 'The order ID (numeric)',
+                    },
+                    orderCode: {
+                        type: 'string',
+                        description: 'The order code (e.g. "A1B2C3D4")',
+                    },
+                },
+                required: [],
+            },
+        },
+    },
 ];
 
 @Injectable()
@@ -210,6 +278,8 @@ export class AiChatService implements OnModuleInit {
         private embeddingService: EmbeddingService,
         private productEmbeddingService: ProductEmbeddingService,
         private collectionEmbeddingService: CollectionEmbeddingService,
+        private orderService: OrderService,
+        private customerService: CustomerService,
     ) {
         this.client = new OpenAI({ apiKey: options.openaiApiKey });
     }
@@ -234,6 +304,7 @@ export class AiChatService implements OnModuleInit {
         ctx: RequestContext,
         userMessage: string,
         conversationHistory: ChatCompletionMessageParam[] = [],
+        customerId?: string | number,
     ): Promise<ChatResult> {
         const messages: ChatCompletionMessageParam[] = [
             { role: 'system', content: SYSTEM_PROMPT },
@@ -243,6 +314,7 @@ export class AiChatService implements OnModuleInit {
 
         let allProducts: AiChatProduct[] = [];
         let allCollections: AiChatCollection[] = [];
+        let allOrders: AiChatOrder[] = [];
         let addToCartAction: AddToCartAction | undefined;
 
         let maxIterations = 5;
@@ -283,13 +355,16 @@ export class AiChatService implements OnModuleInit {
 
                     this.logger.log(`Tool call: ${name}(${JSON.stringify(args)})`);
 
-                    const toolResult = await this.executeTool(ctx, name, args);
+                    const toolResult = await this.executeTool(ctx, name, args, customerId);
 
                     if (toolResult.products.length > 0) {
                         allProducts = this.mergeProducts(allProducts, toolResult.products);
                     }
                     if (toolResult.collections.length > 0) {
                         allCollections = this.mergeCollections(allCollections, toolResult.collections);
+                    }
+                    if (toolResult.orders && toolResult.orders.length > 0) {
+                        allOrders = toolResult.orders;
                     }
                     if (toolResult.addToCartAction) {
                         addToCartAction = toolResult.addToCartAction;
@@ -318,6 +393,7 @@ export class AiChatService implements OnModuleInit {
                     products: allProducts.slice(0, MAX_CHAT_PRODUCTS),
                     collections: allCollections.slice(0, MAX_CHAT_COLLECTIONS),
                     addToCartAction,
+                    orders: allOrders.length > 0 ? allOrders : undefined,
                 };
             }
         }
@@ -327,6 +403,7 @@ export class AiChatService implements OnModuleInit {
             products: allProducts.slice(0, MAX_CHAT_PRODUCTS),
             collections: allCollections.slice(0, MAX_CHAT_COLLECTIONS),
             addToCartAction,
+            orders: allOrders.length > 0 ? allOrders : undefined,
         };
     }
 
@@ -338,7 +415,8 @@ export class AiChatService implements OnModuleInit {
         ctx: RequestContext,
         toolName: string,
         args: Record<string, unknown>,
-    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; addToCartAction?: AddToCartAction }> {
+        customerId?: string | number,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; addToCartAction?: AddToCartAction; orders?: AiChatOrder[] }> {
         switch (toolName) {
             case 'searchProducts':
                 return this.toolSearchProducts(ctx, args);
@@ -350,6 +428,10 @@ export class AiChatService implements OnModuleInit {
                 return this.toolFilterByPrice(ctx, args);
             case 'addToCart':
                 return this.toolAddToCart(ctx, args);
+            case 'getOrderHistory':
+                return this.toolGetOrderHistory(ctx, args, customerId);
+            case 'trackOrder':
+                return this.toolTrackOrder(ctx, args, customerId);
             default:
                 return { products: [], collections: [], summary: `Unknown tool: ${toolName}` };
         }
@@ -613,9 +695,139 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
+    /**
+     * getOrderHistory: fetches the customer's past orders using OrderService.
+     */
+    private async toolGetOrderHistory(
+        ctx: RequestContext,
+        args: Record<string, unknown>,
+        customerId?: string | number,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; orders: AiChatOrder[] }> {
+        if (!customerId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to view order history.', orders: [] };
+        }
+
+        const take = Math.min(Number(args.take) || 5, 10);
+
+        try {
+            const result = await this.orderService.findByCustomerId(ctx, customerId, {
+                take,
+                skip: 0,
+                sort: { orderPlacedAt: 'DESC' as any },
+                filter: {
+                    active: { eq: false },
+                },
+            }, [
+                'lines',
+                'lines.productVariant',
+                'lines.productVariant.translations',
+                'fulfillments',
+            ]);
+
+            const orders = this.mapOrders(result.items);
+
+            return {
+                products: [],
+                collections: [],
+                orders,
+                summary: orders.length > 0
+                    ? `Found ${orders.length} order(s). ${orders.map(o => `Order ${o.code}: ${o.state}, total ${o.total}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
+                    : 'No past orders found.',
+            };
+        } catch (e) {
+            this.logger.error(`Error fetching order history: ${e}`);
+            return { products: [], collections: [], summary: 'Error fetching order history. Please try again.', orders: [] };
+        }
+    }
+
+    /**
+     * trackOrder: gets status and tracking info for a specific order.
+     */
+    private async toolTrackOrder(
+        ctx: RequestContext,
+        args: Record<string, unknown>,
+        customerId?: string | number,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; orders: AiChatOrder[] }> {
+        if (!customerId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to track orders.', orders: [] };
+        }
+
+        const orderId = args.orderId ? String(args.orderId).trim() : undefined;
+        const orderCode = args.orderCode ? String(args.orderCode).trim() : undefined;
+
+        if (!orderId && !orderCode) {
+            return { products: [], collections: [], summary: 'Error: Please provide an orderId or orderCode to track. You can use getOrderHistory first to find your orders.', orders: [] };
+        }
+
+        try {
+            let order: Order | undefined;
+
+            const relations = [
+                'lines',
+                'lines.productVariant',
+                'lines.productVariant.translations',
+                'fulfillments',
+                'customer',
+            ] as any;
+
+            if (orderId) {
+                order = await this.orderService.findOne(ctx, orderId, relations);
+            } else if (orderCode) {
+                order = await this.orderService.findOneByCode(ctx, orderCode, relations);
+            }
+
+            if (!order) {
+                return { products: [], collections: [], summary: `No order found with ${orderId ? `ID ${orderId}` : `code "${orderCode}"`}.`, orders: [] };
+            }
+
+            // Security: verify the order belongs to this customer
+            if ((order as any).customer?.id && String((order as any).customer.id) !== String(customerId)) {
+                return { products: [], collections: [], summary: `No order found with ${orderId ? `ID ${orderId}` : `code "${orderCode}"`}.`, orders: [] };
+            }
+
+            const mapped = this.mapOrders([order]);
+
+            const o = mapped[0];
+            const fulfillmentInfo = o.fulfillments.length > 0
+                ? o.fulfillments.map(f => `${f.state}${f.trackingCode ? ` (tracking: ${f.trackingCode})` : ''} via ${f.method}`).join(', ')
+                : 'No fulfillment yet';
+
+            return {
+                products: [],
+                collections: [],
+                orders: mapped,
+                summary: `Order ${o.code}: State: ${o.state}, Total: ${o.total}, Placed: ${o.orderPlacedAt ?? 'N/A'}. Fulfillment: ${fulfillmentInfo}. Items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`,
+            };
+        } catch (e) {
+            this.logger.error(`Error tracking order: ${e}`);
+            return { products: [], collections: [], summary: 'Error tracking order. Please try again.', orders: [] };
+        }
+    }
+
     // ──────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────
+
+    private mapOrders(orders: Order[]): AiChatOrder[] {
+        return orders.map(order => ({
+            id: String(order.id),
+            code: order.code,
+            state: order.state,
+            total: (order as any).totalWithTax ?? (order as any).total ?? 0,
+            orderPlacedAt: (order as any).orderPlacedAt ? new Date((order as any).orderPlacedAt).toISOString() : null,
+            lines: ((order as any).lines ?? []).map((line: any) => ({
+                productName: line.productVariant?.translations?.[0]?.name
+                    ?? line.productVariant?.name
+                    ?? 'Unknown product',
+                quantity: line.quantity ?? 0,
+            })),
+            fulfillments: ((order as any).fulfillments ?? []).map((f: any) => ({
+                state: f.state ?? 'Unknown',
+                method: f.method ?? 'Unknown',
+                trackingCode: f.trackingCode ?? null,
+            })),
+        }));
+    }
 
     private mapProducts(products: Product[]): AiChatProduct[] {
         const result: AiChatProduct[] = [];
