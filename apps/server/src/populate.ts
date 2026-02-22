@@ -2,7 +2,7 @@ import { bootstrap, defaultConfig, JobQueueService, Logger, mergeConfig } from '
 import { populate } from '@vendure/core/cli';
 import { clearAllTables, populateCustomers } from '@vendure/testing';
 import path from 'path';
-import { initialData } from "../mock-data/data-sources/initial-data";
+import { initialData } from "./initial-data";
 
 import { config } from './vendure-config';
 
