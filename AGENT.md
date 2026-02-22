@@ -1,368 +1,279 @@
 # Vendure AI Commerce Agent – Phase 1
-## Product Intelligence & Discovery Layer
+## Intelligent Shopping Assistant with LLM Orchestration
 
 ---
 
-## 🎯 Purpose
+## Purpose
 
-This AI Agent enables intelligent product discovery inside Vendure using:
+This AI Agent is a **proper ecommerce shopping assistant** for Vendure that:
 
-- Natural language understanding
-- Tool calling
-- **Vendure SearchService** (DefaultSearchPlugin) + hybrid (keyword + vector)
-- Structured responses
-- Collection awareness
-- Safe backend execution
-
-This phase only supports:
-- Product listing
-- Product filtering (keyword, semantic, collection, price)
-- **Budget / price intent** (e.g. "under 50k", "my budget is 30k")
-- **Category / product-type intent** (e.g. "gaming laptop", "laptop")
-- **Gift / intent-based discovery** (e.g. "gift for dad", "romantic gift")
-- **Empty catalog handling**: when no products match, respond with "not available" — never fabricate
-
-No cart or order mutations are included in this phase.
+- Has natural conversations about the store, products, and shopping
+- Uses LLM (GPT-4o-mini) with tool calling to intelligently find products
+- Searches products via keyword search, semantic/vector search, collection browsing, and price filtering
+- Politely refuses off-topic questions (politics, celebrities, general knowledge, etc.)
+- Never fabricates product data — all product info comes from the database
+- Maintains conversation context across multiple messages
 
 ---
 
-## 🧠 Architecture Overview
+## Architecture Overview
 
-User Message
-      ↓
-LLM (Tool Calling Mode)
-      ↓
-Tool Selected?
-  - search (Vendure SearchService)
-  - searchProducts (keyword fallback)
-  - vectorSearch
-  - getCollectionProducts
-  - filterByPrice
-      ↓
-Backend Executes Tool
-      ↓
-Structured Data Returned (or empty)
-      ↓
-If empty → message: "not available" / "not in catalog"
-      ↓
-LLM Formats Conversational Reply
-      ↓
-Return:
-  - message
-  - structured product list (or empty)
+```
+User Message + Conversation History
+       ↓
+Next.js API Route (proxy)
+       ↓
+Vendure REST Controller (POST /ai-assistant/chat)
+       ↓
+AiChatService
+       ↓
+OpenAI Chat Completions API (GPT-4o-mini)
+  - System prompt (store-focused, off-topic rejection)
+  - Conversation history
+  - Tool definitions
+       ↓
+LLM decides: respond directly OR call tools
+       ↓
+If tool calls → execute against Vendure DB → return results to LLM
+       ↓
+LLM formats final conversational response
+       ↓
+Return: { message, products[], collections[] }
+```
 
 ---
 
-## 🔧 Core Concepts
+## Core Concepts
 
 ### 1. AI as Orchestrator
-The LLM does NOT access the database directly.
-
-It only:
-- Understands user intent
-- Decides which tool to call
-- Formats final response
-
-All data retrieval is handled securely by backend services.
-
----
+The LLM (GPT-4o-mini) orchestrates the conversation:
+- Understands user intent (product search, browsing, chitchat, off-topic)
+- Decides which tools to call (or none for general store chat)
+- Formats a natural, conversational response
+- Rejects off-topic questions politely
 
 ### 2. Backend as Executor
-Vendure services are responsible for:
+Vendure services handle all data retrieval:
+- Product search (keyword matching on name/description)
+- Vector/semantic search (pgvector embeddings)
+- Collection browsing
+- Price filtering
+- No hallucinated data — empty results are reported honestly
 
-- Product retrieval (SearchService, ProductService)
-- Filtering (term, collection, facets, price)
-- Collection queries
-- Price constraints (budget)
-- Channel awareness
+### 3. Store-Only Conversation Scope
+The bot ONLY discusses:
+- Products, collections, prices
+- Store-related topics (shipping, returns, how to shop)
+- Shopping assistance (gift suggestions, recommendations)
 
-No hallucinated product data is allowed. When the catalog has no matching products, the backend returns an empty list and the agent replies that the product or criteria are not available.
+The bot REFUSES to discuss:
+- General knowledge (who is Elon Musk, capital of France)
+- Politics, news, celebrities, science
+- Any topic unrelated to the store
 
 ---
 
-## 🛠 Supported Tools
+## Supported Tools
 
-**Vendure way:** Prefer **search** (SearchService) for product discovery; it returns products from the same index as the storefront and supports term, collection, facets, and sort. Use other tools when combining with price or semantic intent.
+### 1. searchProducts
+**Description:** Keyword-based product search across name and description.
 
----
-
-### 1️⃣ search (Vendure SearchService)
-
-Description:
-Full-text product search using Vendure’s DefaultSearchPlugin / SearchService. This is the same search the storefront uses; results are channel-aware and come from the catalog index.
-
-Parameters:
+**Parameters:**
+```json
 {
-  term: string,
-  collectionSlug?: string,
-  take?: number,
-  skip?: number,
-  sort?: { name?: 'ASC'|'DESC', price?: 'ASC'|'DESC' }
+  "query": "string (required) — search term",
+  "take": "number (optional) — max results, default 10"
 }
+```
 
-Execution:
-- Use SearchService.search() with SearchInput
-- Apply channel filter (implicit)
-- Return product list (e.g. top 10)
+**Use for:** "laptop", "gaming mouse", "headphones", "wireless earbuds"
 
-Use for:
-- "gaming laptop", "laptop", "wireless mouse"
-- Category or product-type queries
-- When user names a product or category; combine with filterByPrice for budget (e.g. "laptop under 50k" → search(term: "laptop") + filterByPrice(maxPrice: 50000), or a single backend call that does both)
+### 2. vectorSearch
+**Description:** Semantic search using OpenAI embeddings + pgvector similarity. Finds products by intent/meaning rather than exact keywords.
 
----
-
-### 2️⃣ searchProducts
-
-Description:
-Keyword-based search across product name and description (ProductService or simple query). Use when not using SearchService or as fallback.
-
-Parameters:
+**Parameters:**
+```json
 {
-  query: string
+  "query": "string (required) — semantic query"
 }
+```
 
-Execution:
-- Uses ProductService or equivalent
-- Applies channel filter
-- Returns top 10 products
+**Use for:** "gift for dad", "something romantic", "minimal aesthetic", "cozy winter vibes"
 
----
+### 3. getCollections
+**Description:** List available product collections/categories.
 
-### 3️⃣ vectorSearch
-
-Description:
-Semantic search using embeddings (e.g. pgvector).
-
-Parameters:
+**Parameters:**
+```json
 {
-  query: string
+  "query": "string (optional) — filter collections by name"
 }
+```
 
-Execution:
-- Convert query to embedding
-- Use pgvector similarity
-- Return top 5 products
+**Use for:** "what categories do you have", "show collections", "browse electronics"
 
-Use for:
-- "gift", "gift for dad", "romantic gift"
-- "minimal aesthetic", "something for him/her"
-- Intent-based discovery when no exact keyword
+### 4. filterByPrice
+**Description:** Filter products by price range/budget.
 
----
-
-### 4️⃣ getCollectionProducts
-
-Description:
-Retrieve products from a specific collection.
-
-Parameters:
+**Parameters:**
+```json
 {
-  collectionSlug: string
+  "minPrice": "number (optional) — min price in smallest currency unit",
+  "maxPrice": "number (optional) — max price in smallest currency unit",
+  "query": "string (optional) — keyword to narrow results"
 }
+```
 
-Execution:
-- Find collection by slug
-- Retrieve assigned products
-- Respect channel constraints
-
-Use for:
-- "Show winter collection"
-- "What is in summer sale?"
+**Use for:** "under $50", "between 100 and 200", "laptop under 500", "my budget is 30k"
 
 ---
 
-### 5️⃣ filterByPrice
+## User Intent → Behavior Mapping
 
-Description:
-Filter products by price range (budget).
+| User says | Bot behavior |
+|-----------|-------------|
+| "Hi", "Hello" | Greets warmly, asks how it can help |
+| "What do you sell?" | Calls getCollections, describes the store |
+| "laptop", "gaming mouse" | Calls searchProducts with keyword |
+| "gift for dad" | Calls vectorSearch for semantic match |
+| "under $50" | Calls filterByPrice |
+| "laptop under 500" | Calls searchProducts + filterByPrice |
+| "show me collections" | Calls getCollections |
+| "Who is Elon Musk?" | Politely refuses, redirects to shopping |
+| "Write me a poem" | Politely refuses, redirects to shopping |
+| "Do you have returns?" | Answers with general store info (no tool needed) |
 
-Parameters:
+**When tools return no products:** Bot honestly says no matching products were found. Never invents products.
+
+---
+
+## Structured Response Format
+
+The backend always returns:
+```json
 {
-  minPrice?: number,
-  maxPrice?: number
-}
-
-Execution:
-- Join product variants
-- Apply price constraints (channel-aware)
-- Return filtered products
-
-Use for:
-- "my budget is 30k", "under 50k", "between 20k and 40k"
-- Combine with search: e.g. search(term: "laptop") then filterByPrice(maxPrice: 50000), or one backend tool that accepts term + maxPrice
-
----
-
-## 📋 User Intent → Tool Mapping
-
-| User says | Primary tool(s) | Notes |
-|-----------|-----------------|--------|
-| "gaming laptop", "laptop", "wireless mouse" | **search** (term) | Vendure SearchService; returns catalog products only |
-| "laptop under 50k", "under 50k", "my budget is 30k" | **filterByPrice** and optionally **search** | Parse budget (e.g. 50k → 50000); combine term + maxPrice when both apply |
-| "gift", "gift for dad", "romantic gift" | **vectorSearch** | Semantic; if no results, reply not available |
-| "winter collection", "summer sale" | **getCollectionProducts** (collectionSlug) | Resolve name → slug if needed |
-| Generic "show me products" / category | **search** (term) or **getCollectionProducts** | Prefer search when user gives a product type |
-
-**When tools return no products:** Always respond that the product or criteria are **not available** or **not in the catalog**. Never invent product names, prices, or slugs.
-
----
-
-## 🗄 Data Model
-
-### ProductEmbedding Entity
-
-Stores vector representation of products.
-
-Fields:
-- id
-- product (relation)
-- embedding (pgvector)
-
-Embedding generated on:
-- Product creation
-- Product update
-- Description change
-
----
-
-## 🔍 Search Strategy
-
-Default Mode: Hybrid (Vendure way)
-
-**Vendure way:** Use **SearchService** (DefaultSearchPlugin) for keyword/product search so the AI uses the same index and behavior as the storefront. Optionally combine with vector search for semantic intent.
-
-Hybrid = Vendure search (keyword) + Vector
-
-Flow:
-1. For product/category terms → use search (SearchService) with `term`
-2. For gift/intent queries → use vectorSearch
-3. For budget → use filterByPrice (and optionally search with term)
-4. Merge/deduplicate when combining tools
-5. Return top ranked; if empty, return "not available"
-
-Configurable via plugin options.
-
----
-
-## 🧱 Structured Response Format
-
-AI Agent must always return:
-
-{
-  message: string,
-  products: [
+  "message": "string — conversational response from the LLM",
+  "products": [
     {
-      id: ID,
-      name: string,
-      slug: string,
-      price: number,
-      image: string | null
+      "id": "string",
+      "name": "string",
+      "slug": "string",
+      "price": "number (smallest currency unit)",
+      "image": "string | null"
+    }
+  ],
+  "collections": [
+    {
+      "id": "string",
+      "name": "string",
+      "slug": "string"
     }
   ]
 }
+```
 
 Rules:
-- Price must come from database
-- Slug must come from database
-- Image must come from featuredAsset
-- No fabricated data allowed
-- **When no products match:** set `products: []` and set `message` to a clear "not available" / "not in catalog" reply (e.g. "We don't have any [X] in the catalog right now." or "No products found under that budget.")
+- All product data comes from the database
+- Prices come from variant prices
+- Images come from featuredAsset
+- No fabricated data
+- Empty arrays when no results
 
 ---
 
-## 🛡 Safety & Validation Rules
+## Conversation History
 
-1. AI cannot generate products not present in database
-2. Product IDs must be validated
-3. Price must be read from variant
-4. Always respect channel context
-5. Never expose internal DB fields
-6. **Empty results:** If a tool returns no products, respond that the item or criteria are not available; never suggest or invent products
+The frontend sends conversation history with each request for multi-turn context:
+```json
+{
+  "message": "current user message",
+  "history": [
+    { "role": "user", "content": "previous message" },
+    { "role": "assistant", "content": "previous response" }
+  ]
+}
+```
 
----
-
-## 🧠 Prompt Strategy
-
-System Prompt:
-
-"You are a shopping assistant for this store. 
-Use tools when product data is required (search, vectorSearch, getCollectionProducts, filterByPrice). 
-Prefer the Vendure search tool for product/category queries (e.g. 'gaming laptop', 'laptop under 50k' = search + price filter). 
-Use vectorSearch for gift or intent-based queries (e.g. 'gift for dad'). 
-Never fabricate products. 
-Only respond using provided tool data. 
-If a tool returns no products, say clearly that the product or criteria are not available / not in the catalog."
-
-AI must:
-- Call tools for data
-- Not answer product questions without tool usage
-- Reply "not available" / "not in catalog" when tools return empty results
+This allows the bot to understand context like:
+- "Show me laptops" → "Now show me the cheaper ones" (understands "cheaper laptops")
+- "What collections do you have?" → "Show me electronics" (understands context)
 
 ---
 
-## ⚙ Plugin Configuration (Phase 1)
+## System Prompt Strategy
 
-Example:
+The system prompt enforces:
+1. **Store-only scope** — only discuss products, shopping, store topics
+2. **Tool usage** — always use tools for product data, never fabricate
+3. **Off-topic rejection** — politely redirect non-store questions
+4. **Honest empty results** — say "not found" when tools return nothing
+5. **Natural conversation** — be friendly, concise, helpful
 
+---
+
+## Safety & Validation Rules
+
+1. AI cannot generate products not in the database
+2. Product IDs, prices, slugs all come from DB queries
+3. Always respect Vendure channel context
+4. Never expose internal DB fields
+5. Off-topic questions are rejected (not answered with disclaimers)
+6. Empty results are reported honestly
+7. Conversation history is text-only (no tool call details sent to frontend)
+
+---
+
+## Plugin Configuration
+
+```typescript
 AiAssistantPlugin.init({
-  searchMode: 'hybrid',
-  useVendureSearchService: true,  // Use DefaultSearchPlugin / SearchService for product search (Vendure way)
-  embeddingsProvider: 'openai',
-  maxResults: 10,
-  enableCollections: true
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    embeddingModel: 'text-embedding-3-small',
 })
+```
 
 ---
 
-## 🚀 Extensibility Roadmap
+## Technical Stack
 
-Future Phases:
+- **LLM:** OpenAI GPT-4o-mini (chat completions with tool calling)
+- **Embeddings:** OpenAI text-embedding-3-small (1536 dimensions)
+- **Vector DB:** pgvector extension in PostgreSQL
+- **Backend:** Vendure plugin (NestJS controller + services)
+- **Frontend:** Next.js chat panel (React, shadcn/ui)
+- **Proxy:** Next.js API route → Vendure REST endpoint
 
-Phase 2:
-- Cart management tools
-- Add to cart
-- Remove from cart
-- Cart summary
+---
 
-Phase 3:
+## Extensibility Roadmap
+
+**Phase 2:**
+- Cart management tools (add to cart, remove, summary)
+- Order-related queries
+
+**Phase 3:**
 - Order tracking
 - Personalized recommendations
-- Analytics
-- Reranking models
+- Analytics & conversation insights
+- Streaming responses
 
 ---
 
-## 📌 Design Philosophy
+## Scope Covered (Phase 1)
 
-This is not a chatbot.
+- LLM-orchestrated product discovery with tool calling
+- Keyword search (searchProducts)
+- Semantic/vector search (vectorSearch)
+- Collection browsing (getCollections)
+- Budget/price filtering (filterByPrice)
+- Natural store conversations (greetings, store info, help)
+- Off-topic rejection (polite redirects)
+- Conversation history/context
+- Structured safe output
+- "Not available" when products not in catalog
 
-This is a:
-
-AI Commerce Discovery Engine for Vendure.
-
-It follows:
-
-- Tool-driven architecture
-- Strict backend validation
-- Pluggable embeddings
-- Vendor-neutral design
-- Production-grade safety
-
----
-
-## 🏁 End of Phase 1
-
-Scope covered:
-✔ Product discovery (Vendure SearchService + keyword)
-✔ Semantic search (gift, intent-based)
-✔ Collections
-✔ Budget / price filtering ("under 50k", "my budget")
-✔ Category / product-type queries ("gaming laptop", "laptop")
-✔ Structured safe output
-✔ "Not available" when products not in catalog
-
-Not covered:
-✖ Cart mutations
-✖ Checkout
-✖ Order management
+**Not covered:**
+- Cart mutations
+- Checkout
+- Order management
+- Streaming responses

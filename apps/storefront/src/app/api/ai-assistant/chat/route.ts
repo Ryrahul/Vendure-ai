@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
             {status: 503}
         );
     }
-    let body: { message?: string };
+    let body: { message?: string; history?: Array<{ role: string; content: string }> };
     try {
         body = await request.json();
     } catch {
@@ -27,18 +27,22 @@ export async function POST(request: NextRequest) {
     const message = typeof body?.message === 'string' ? body.message.trim() : '';
     if (!message) {
         return NextResponse.json(
-            {message: 'Send a message to search for products.', products: [], collections: []},
+            {message: 'Send a message to get started.', products: [], collections: []},
             {status: 400}
         );
     }
+
+    const history = Array.isArray(body?.history) ? body.history : [];
+
     const url = `${base}/ai-assistant/chat`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, history }),
     });
     if (!res.ok) {
         const text = await res.text();
+        console.error('[ai-assistant proxy] backend error:', res.status, text);
         return NextResponse.json(
             {message: 'AI assistant request failed.', products: [], collections: []},
             {status: 502}
@@ -46,8 +50,9 @@ export async function POST(request: NextRequest) {
     }
     const data = (await res.json()) as {
         message: string;
-        products?: Array<{ id: string; name: string; slug: string; price: number; image: string | null }>;
+        products?: Array<{ id: string; name: string; slug: string; price: number; image: string | null; variantId: string }>;
         collections?: Array<{ id: string; name: string; slug: string }>;
+        addToCartAction?: { variantId: string; quantity: number; productName?: string };
     };
     const assetsBase = `${base}/assets/`;
     const products = (data.products || []).map((p) => ({
@@ -58,5 +63,6 @@ export async function POST(request: NextRequest) {
         message: data.message,
         products,
         collections: data.collections || [],
+        addToCartAction: data.addToCartAction || null,
     });
 }
