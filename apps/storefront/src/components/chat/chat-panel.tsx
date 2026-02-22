@@ -105,10 +105,17 @@ export function ChatPanel({onClose}: ChatPanelProps) {
         setLoading(true);
 
         try {
-            const history = messages.map((msg) => ({
-                role: msg.role,
-                content: msg.content,
-            }));
+            // Build history with product data so LLM knows variantIds from previous turns
+            const history = messages.map((msg) => {
+                let content = msg.content;
+                if (msg.role === 'assistant' && msg.products && msg.products.length > 0) {
+                    const productList = msg.products
+                        .map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${p.price})`)
+                        .join(', ');
+                    content += `\n[Products shown: ${productList}]`;
+                }
+                return { role: msg.role, content };
+            });
 
             const res = await fetch('/api/ai-assistant/chat', {
                 method: 'POST',
