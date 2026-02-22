@@ -591,7 +591,7 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
-  // todo: do from search service 
+// todo: esma elastic search ko price range wala halne aaile hawa in memory sorting xa
     private async toolFilterByPrice(
         ctx: RequestContext,
         args: Record<string, unknown>,
@@ -600,32 +600,83 @@ export class AiChatService implements OnModuleInit {
         const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : undefined;
         const query = String(args.query ?? '').trim();
 
-        const repo = this.connection.rawConnection.getRepository(Product);
-        let qb = repo.createQueryBuilder('product')
-            .leftJoinAndSelect('product.translations', 'translation')
-            .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
-            .leftJoinAndSelect('product.variants', 'variant')
-            .leftJoinAndSelect('variant.productVariantPrices', 'variantPrice')
-            .where('product.deletedAt IS NULL')
-            .andWhere('product.enabled = :enabled', { enabled: true });
+        let mapped: AiChatProduct[];
 
-        if (query) {
-            qb = qb.andWhere(
-                '(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term)',
-                { term: `%${query.toLowerCase()}%` },
-            );
-        }
-        if (minPrice != null && maxPrice != null) {
-            qb = qb.andWhere('variantPrice.price BETWEEN :minPrice AND :maxPrice', { minPrice, maxPrice });
-        } else if (minPrice != null) {
-            qb = qb.andWhere('variantPrice.price >= :minPrice', { minPrice });
-        } else if (maxPrice != null) {
-            qb = qb.andWhere('variantPrice.price <= :maxPrice', { maxPrice });
-        }
+        if (query && this.fulltextSearchService) {
+            // Use Vendure's search index for keyword matching (supports collection names, facets, etc.)
+            // Fetch a larger batch so we have enough candidates after price filtering
+            const fetchSize = 50;
+            const result = await this.fulltextSearchService.search(ctx, {
+                term: query,
+                take: fetchSize,
+                skip: 0,
+                groupByProduct: true,
+            }, true);
 
-        qb = qb.orderBy('variantPrice.price', 'ASC').take(MAX_CHAT_PRODUCTS);
-        const products = await qb.getMany();
-        const mapped = this.mapProducts(products);
+            this.logger.log(`filterByPrice: FulltextSearch returned ${result.items.length} items for "${query}"`);
+
+            // Map results and extract price
+            let candidates: AiChatProduct[] = result.items.map((item: any) => {
+                const price = item.price && 'value' in item.price
+                    ? item.price.value
+                    : item.price && 'min' in item.price
+                        ? item.price.min
+                        : 0;
+                return {
+                    id: String(item.productId),
+                    name: String(item.productName ?? ''),
+                    slug: String(item.slug ?? ''),
+                    price: Number(price),
+                    image: item.productAsset?.preview ?? null,
+                    variantId: String(item.productVariantId),
+                };
+            });
+
+            // Apply price filter in memory
+            if (minPrice != null) {
+                candidates = candidates.filter(p => p.price >= minPrice);
+            }
+            if (maxPrice != null) {
+                candidates = candidates.filter(p => p.price <= maxPrice);
+            }
+
+            // Sort by price ascending and limit
+            candidates.sort((a, b) => a.price - b.price);
+            mapped = candidates.slice(0, MAX_CHAT_PRODUCTS);
+        } else {
+            // Fallback: raw DB query (no keyword, or FulltextSearchService unavailable)
+            const repo = this.connection.rawConnection.getRepository(Product);
+            let qb = repo.createQueryBuilder('product')
+                .leftJoinAndSelect('product.translations', 'translation')
+                .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
+                .leftJoinAndSelect('product.variants', 'variant')
+                .leftJoinAndSelect('variant.productVariantPrices', 'variantPrice')
+                .where('product.deletedAt IS NULL')
+                .andWhere('product.enabled = :enabled', { enabled: true });
+
+            if (query) {
+                // Also search collection names so terms like "electronics" match
+                // In Vendure, Collection ↔ ProductVariant is a many-to-many relation
+                qb = qb
+                    .leftJoin('variant.collections', 'collection')
+                    .leftJoin('collection.translations', 'collectionTranslation')
+                    .andWhere(
+                        '(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term OR LOWER(collectionTranslation.name) LIKE :term)',
+                        { term: `%${query.toLowerCase()}%` },
+                    );
+            }
+            if (minPrice != null && maxPrice != null) {
+                qb = qb.andWhere('variantPrice.price BETWEEN :minPrice AND :maxPrice', { minPrice, maxPrice });
+            } else if (minPrice != null) {
+                qb = qb.andWhere('variantPrice.price >= :minPrice', { minPrice });
+            } else if (maxPrice != null) {
+                qb = qb.andWhere('variantPrice.price <= :maxPrice', { maxPrice });
+            }
+
+            qb = qb.orderBy('variantPrice.price', 'ASC').take(MAX_CHAT_PRODUCTS);
+            const products = await qb.getMany();
+            mapped = this.mapProducts(products);
+        }
 
         const priceDesc = minPrice != null && maxPrice != null
             ? `between ${minPrice} and ${maxPrice}`
