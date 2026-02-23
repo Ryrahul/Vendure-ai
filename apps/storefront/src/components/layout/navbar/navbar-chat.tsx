@@ -1,6 +1,6 @@
 'use client';
 
-import {useState} from 'react';
+import {useState, Suspense} from 'react';
 import {MessageCircle} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Sheet, SheetTrigger} from '@/components/ui/sheet';
@@ -17,7 +17,9 @@ export function NavbarChat() {
                     <span className="sr-only">AI Assistant</span>
                 </Button>
             </SheetTrigger>
-            <ChatPanel onClose={() => setOpen(false)} />
+            <Suspense fallback={null}>
+                <ChatPanel onClose={() => setOpen(false)} />
+            </Suspense>
         </Sheet>
     );
 }

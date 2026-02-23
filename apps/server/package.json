@@ -13,23 +13,25 @@
     "start:worker": "node ./dist/index-worker.js",
     "start": "concurrently npm:start:*",
     "populate": "ts-node ./src/populate.ts"
-
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.30",
     "@vendure/asset-server-plugin": "3.5.4",
     "@vendure/core": "3.5.4",
     "@vendure/dashboard": "3.5.4",
     "@vendure/email-plugin": "3.5.4",
     "@vendure/graphiql-plugin": "3.5.4",
     "@vendure/testing": "^3.5.4",
+    "ai": "^6.0.97",
     "dotenv": "17.3.1",
     "openai": "^6.22.0",
-    "pg": "8.18.0"
+    "pg": "8.18.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@vendure/cli": "3.5.4",
     "concurrently": "9.2.1",
-    "typescript": "5.8.2",
-    "ts-node": "10.9.2"
+    "ts-node": "10.9.2",
+    "typescript": "5.8.2"
   }
 }

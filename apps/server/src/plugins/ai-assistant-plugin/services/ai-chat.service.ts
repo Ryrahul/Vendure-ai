@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import OpenAI from 'openai';
-import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
-import { RequestContext, TransactionalConnection, Product, ProductVariant, Collection, OrderService, CustomerService, Order, OrderLine, isGraphQlErrorResult } from '@vendure/core';
+import { streamText, tool, stepCountIs, type ToolSet } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { z } from 'zod';
+import { RequestContext, TransactionalConnection, Product, ProductVariant, Collection, OrderService, CustomerService, Order, isGraphQlErrorResult, ConfigService } from '@vendure/core';
 import { In } from 'typeorm';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions, MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE } from '../constants';
 import { EmbeddingService } from './embedding.service';
@@ -72,6 +73,37 @@ export interface AiActiveOrder {
     lines: AiCartLine[];
 }
 
+/** Action signal for the frontend to set shipping address */
+export interface SetShippingAddressAction {
+    fullName: string;
+    streetLine1: string;
+    streetLine2?: string;
+    city: string;
+    province: string;
+    postalCode: string;
+    countryCode: string;
+    phoneNumber: string;
+    company?: string;
+}
+
+/** Action signal for the frontend to set billing address */
+export interface SetBillingAddressAction {
+    fullName: string;
+    streetLine1: string;
+    streetLine2?: string;
+    city: string;
+    province: string;
+    postalCode: string;
+    countryCode: string;
+    phoneNumber: string;
+    company?: string;
+}
+
+/** Action signal for the frontend to set shipping method */
+export interface SetShippingMethodAction {
+    shippingMethodId: string;
+}
+
 export interface ChatResult {
     message: string;
     products: AiChatProduct[];
@@ -79,6 +111,15 @@ export interface ChatResult {
     addToCartAction?: AddToCartAction;
     orders?: AiChatOrder[];
     activeOrder?: AiActiveOrder;
+    setShippingAddressAction?: SetShippingAddressAction;
+    setBillingAddressAction?: SetBillingAddressAction;
+    setShippingMethodAction?: SetShippingMethodAction;
+}
+
+/** Result type for streaming chat — returns a ReadableStream + structured data promise */
+export interface StreamingChatResult {
+    stream: ReadableStream<Uint8Array>;
+    dataPromise: Promise<Omit<ChatResult, 'message'>>;
 }
 
 // ──────────────────────────────────────────────
@@ -116,6 +157,11 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - \`adjustOrderLine\` — change the quantity of an item in the cart, or remove it by setting quantity to 0 (requires login)
 - \`getOrderHistory\` — show the customer's past orders (requires login)
 - \`trackOrder\` — get status and tracking info for an order (requires login)
+- \`getAvailableCountries\` — list countries available for shipping/billing addresses
+- \`getEligibleShippingMethods\` — get available shipping methods for the active order (after address is set)
+- \`setShippingAddress\` — set shipping address on the active order (requires login and active order)
+- \`setBillingAddress\` — set billing address on the active order (requires login and active order)
+- \`setShippingMethod\` — set shipping method on the active order (requires login and active order)
 
 ## CRITICAL response rules for products:
 - When tools return product data, do NOT list product names, prices, or images in your text. The UI automatically renders product cards with images, names, prices, and "Add to Cart" buttons below your message.
@@ -124,10 +170,13 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - NEVER list individual product names with prices. The product cards handle that.
 
 ## CRITICAL rules for addToCart:
-- The variantId MUST be the EXACT numeric ID string from the product search results (e.g. "42", "15", "103"). It is always a number.
-- NEVER fabricate or guess a variantId. If you don't have the exact variantId from a previous search result, search for the product first.
-- Before calling addToCart, confirm with the user: mention the product name, price, and ask what quantity they want.
-- Once confirmed, call addToCart with the exact variantId from the search results and the requested quantity.
+- The variantId MUST be the EXACT numeric ID string from the MOST RECENT search results for that specific product (e.g. "42", "15", "103"). It is always a number.
+- NEVER fabricate or guess a variantId. If you are not 100% certain of the correct variantId, search for the product AGAIN first.
+- When the user says "buy this" or "add this", look at the MOST RECENTLY shown product results. Do NOT reuse variantIds from older search results for different products.
+- You may confirm ONCE: mention the product name, price, and ask about quantity. But if the user has ALREADY confirmed (said "yes", "sure", "go ahead", "do it", given a quantity, etc.), call addToCart IMMEDIATELY. NEVER ask for confirmation more than once.
+- Once confirmed, call addToCart with the exact variantId AND productName from the search results and the requested quantity.
+- If there is ANY ambiguity about WHICH product the user means, ASK. But if the product is clear and user said yes, just add it.
+- ALWAYS provide the productName parameter when calling addToCart so the backend can verify the correct product.
 
 ## Rules for cart tools (getActiveOrder, adjustOrderLine):
 - Use \`getActiveOrder\` when the customer asks about their cart, what's in their cart, cart total, or wants to review before checkout.
@@ -143,8 +192,19 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - When tracking an order, mention the order state, fulfillment status, tracking code (if available), and items.
 - If a customer says "where's my order?" or "track my order" without specifying which one, use getOrderHistory first to find their most recent order, then use trackOrder on that order.
 
+## Rules for checkout tools:
+- **IMPORTANT — Country codes:** ALWAYS call \`getAvailableCountries\` FIRST before setting any address. Only use country codes returned by that tool. If the customer gives a country name or code not in the list, tell them which countries are available and ask them to pick one. NEVER guess or assume a country code — the backend will reject invalid ones.
+- Use \`setShippingAddress\` when the customer provides their shipping address. Collect all required fields: fullName, streetLine1, city, province, postalCode, countryCode, phoneNumber. Ask for missing fields before calling.
+- Use \`setBillingAddress\` when the customer provides a billing address. If they say "same as shipping", use the same address data.
+- Use \`getEligibleShippingMethods\` after the shipping address is set to show available shipping options.
+- Use \`setShippingMethod\` with the id from getEligibleShippingMethods when the customer chooses a shipping option.
+- You CANNOT process payments. After shipping address, billing address, and shipping method are all set, tell the customer: "Everything is set! Please head to the [checkout page](/checkout) to complete your payment." Do NOT attempt to handle payment in the chat.
+- Always ensure there is an active order before calling checkout tools. If no active order exists, suggest adding items first.
+- The typical checkout flow is: getAvailableCountries → set shipping address → (optionally) set billing address → get eligible shipping methods → set shipping method → direct user to /checkout for payment.
+
 ## IMPORTANT — matching products from conversation context:
-- When the user refers to a product that was ALREADY shown in the conversation (from a previous search), use the variantId you already have. Do NOT search again.
+- When the user refers to a product that was ALREADY shown in the MOST RECENT search results, use the variantId from that specific search. Do NOT reuse variantIds from older/different searches.
+- If the user switches topics to a different product, ALWAYS search again to get the correct variantId for the new product. Do NOT mix up variantIds between different products.
 - Users will often use partial names, abbreviations, or slightly different wording. For example:
   - "the wooden desk" → matches "Wooden Side Desk"
   - "add the camera" → if only one camera was shown, use that one
@@ -157,184 +217,14 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - Keep product-related messages SHORT since product cards are shown separately
 - Always be honest - if something isn't available, say so`;
 
-// ──────────────────────────────────────────────
-// Tool definitions for OpenAI function calling
-// ──────────────────────────────────────────────
-const TOOLS: ChatCompletionTool[] = [
-    {
-        type: 'function',
-        function: {
-            name: 'searchProducts',
-            description: 'Search for products by keyword or product name. Returns products with their id, name, slug, price, image, and variantId.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'The search term or product keyword',
-                    },
-                    take: {
-                        type: 'number',
-                        description: 'Number of results to return (default 10, max 20)',
-                    },
-                },
-                required: ['query'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'vectorSearch',
-            description: 'Semantic/intent-based product search. Returns products with their id, name, slug, price, image, and variantId. Use for vague queries like "gift for dad", "something romantic".',
-            parameters: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'The semantic search query',
-                    },
-                },
-                required: ['query'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'getCollections',
-            description: 'Get available product collections/categories in the store.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'Optional search term to filter collections.',
-                    },
-                },
-                required: [],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'filterByPrice',
-            description: 'Filter products by price range / budget. Prices are in the smallest currency unit (cents). "under 50 dollars" = maxPrice 5000.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    minPrice: { type: 'number', description: 'Min price in cents. Optional.' },
-                    maxPrice: { type: 'number', description: 'Max price in cents. Optional.' },
-                    query: { type: 'string', description: 'Optional keyword to narrow results (e.g. "laptop")' },
-                },
-                required: [],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'addToCart',
-            description: 'Add a product to the customer\'s shopping cart. IMPORTANT: The variantId MUST be the exact numeric ID from a previous search result (e.g. "42"). Never guess or fabricate a variantId. If you don\'t have it, search for the product first.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    variantId: {
-                        type: 'string',
-                        description: 'The EXACT numeric variant ID from a previous search result. Must be a number like "42", never a slug or made-up string.',
-                    },
-                    quantity: {
-                        type: 'number',
-                        description: 'Quantity to add (default 1)',
-                    },
-                    productName: {
-                        type: 'string',
-                        description: 'The product name (for confirmation message)',
-                    },
-                },
-                required: ['variantId'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'getOrderHistory',
-            description: 'Get the customer\'s past orders. Returns a list of orders with code, state, total, date, and items ordered. Use when customer asks about their order history or past purchases.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    take: {
-                        type: 'number',
-                        description: 'Max number of orders to return (default 5, max 10)',
-                    },
-                },
-                required: [],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'trackOrder',
-            description: 'Get the status and tracking information for a specific order. Returns order state, fulfillment status, tracking code, and items. Use when customer asks about the status of an order or wants tracking info.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    orderId: {
-                        type: 'string',
-                        description: 'The order ID (numeric)',
-                    },
-                    orderCode: {
-                        type: 'string',
-                        description: 'The order code (e.g. "A1B2C3D4")',
-                    },
-                },
-                required: [],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'getActiveOrder',
-            description: 'Get the customer\'s current shopping cart (active order). Returns all line items with product names, quantities, prices, and the cart total. Use when customer asks about their cart, wants to review items, or before adjusting quantities.',
-            parameters: {
-                type: 'object',
-                properties: {},
-                required: [],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'adjustOrderLine',
-            description: 'Adjust the quantity of an item in the customer\'s cart, or remove it. Requires the orderLineId from getActiveOrder results. Set quantity to 0 to remove the item. ALWAYS call getActiveOrder first if you do not have the orderLineId.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    orderLineId: {
-                        type: 'string',
-                        description: 'The order line ID from getActiveOrder results (numeric)',
-                    },
-                    quantity: {
-                        type: 'number',
-                        description: 'The new absolute quantity. Set to 0 to remove the item.',
-                    },
-                },
-                required: ['orderLineId', 'quantity'],
-            },
-        },
-    },
-];
+// Tool definitions are created inline in the chat/streamChat methods using Vercel AI SDK tool() + zod schemas
 
 @Injectable()
 export class AiChatService implements OnModuleInit {
     private readonly logger = new Logger(AiChatService.name);
-    private client: OpenAI;
+    private openai: ReturnType<typeof createOpenAI>;
     private fulltextSearchService: any; // Resolved at runtime from DefaultSearchPlugin's module
+    private assetUrlPrefix: string = '';
 
     constructor(
         @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
@@ -345,8 +235,9 @@ export class AiChatService implements OnModuleInit {
         private collectionEmbeddingService: CollectionEmbeddingService,
         private orderService: OrderService,
         private customerService: CustomerService,
+        private configService: ConfigService,
     ) {
-        this.client = new OpenAI({ apiKey: options.openaiApiKey });
+        this.openai = createOpenAI({ apiKey: options.openaiApiKey });
     }
 
     async onModuleInit() {
@@ -359,164 +250,254 @@ export class AiChatService implements OnModuleInit {
         } catch (e) {
             this.logger.warn('FulltextSearchService not available, falling back to DB queries for search');
         }
+
+        // Build asset URL prefix from Vendure server config
+        try {
+            const { apiOptions } = this.configService;
+            const hostname = apiOptions.hostname || 'localhost';
+            const port = apiOptions.port || 3000;
+            // AssetServerPlugin uses 'assets' as the route by default
+            this.assetUrlPrefix = `http://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${port}/assets/`;
+            this.logger.log(`Asset URL prefix resolved: ${this.assetUrlPrefix}`);
+        } catch (e) {
+            this.assetUrlPrefix = 'http://localhost:3000/assets/';
+            this.logger.warn(`Could not resolve asset URL prefix, using default: ${this.assetUrlPrefix}`);
+        }
     }
 
-    /**
-     * Main chat method: takes user message + conversation history,
-     * runs LLM with tool calling, executes tools, returns structured response.
-     */
-    async chat(
+ 
+    private resolveAssetUrl(previewPath: string | null): string | null {
+        if (!previewPath) return null;
+        if (previewPath.startsWith('http://') || previewPath.startsWith('https://')) {
+            return previewPath;
+        }
+        return `${this.assetUrlPrefix}${previewPath.replace(/^\//, '')}`;
+    }
+
+
+    private buildTools(ctx: RequestContext, customerId?: string | number): ToolSet {
+        return {
+            searchProducts: tool({
+                description: 'Search for products by keyword or product name. Returns products with their id, name, slug, price, image, and variantId.',
+                inputSchema: z.object({
+                    query: z.string().describe('The search term or product keyword'),
+                    take: z.number().optional().describe('Number of results to return (default 10, max 20)'),
+                }),
+                execute: async ({ query, take }) => this.toolSearchProducts(ctx, { query, take }),
+            }),
+            vectorSearch: tool({
+                description: 'Semantic/intent-based product search. Use for vague queries like "gift for dad", "something romantic".',
+                inputSchema: z.object({
+                    query: z.string().describe('The semantic search query'),
+                }),
+                execute: async ({ query }) => this.toolVectorSearch(ctx, { query }),
+            }),
+            getCollections: tool({
+                description: 'Get available product collections/categories in the store.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter collections'),
+                }),
+                execute: async ({ query }) => this.toolGetCollections(ctx, { query }),
+            }),
+            filterByPrice: tool({
+                description: 'Filter products by price range / budget. Prices are in the smallest currency unit (cents). "under 50 dollars" = maxPrice 5000.',
+                inputSchema: z.object({
+                    minPrice: z.number().optional().describe('Min price in cents'),
+                    maxPrice: z.number().optional().describe('Max price in cents'),
+                    query: z.string().optional().describe('Optional keyword to narrow results (e.g. "laptop")'),
+                }),
+                execute: async ({ minPrice, maxPrice, query }) => this.toolFilterByPrice(ctx, { minPrice, maxPrice, query }),
+            }),
+            addToCart: tool({
+                description: 'Add a product to the customer\'s shopping cart. The variantId MUST be the exact numeric ID from a previous search result. Never guess or fabricate a variantId.',
+                inputSchema: z.object({
+                    variantId: z.string().describe('The EXACT numeric variant ID from a previous search result'),
+                    quantity: z.number().optional().describe('Quantity to add (default 1)'),
+                    productName: z.string().optional().describe('The product name (for confirmation)'),
+                }),
+                execute: async ({ variantId, quantity, productName }) => this.toolAddToCart(ctx, { variantId, quantity, productName }),
+            }),
+            getActiveOrder: tool({
+                description: 'Get the customer\'s current shopping cart (active order). Returns all line items with product names, quantities, prices, and the cart total.',
+                inputSchema: z.object({}),
+                execute: async () => this.toolGetActiveOrder(ctx, {}),
+            }),
+            adjustOrderLine: tool({
+                description: 'Adjust the quantity of an item in the customer\'s cart, or remove it. Requires the orderLineId from getActiveOrder results. Set quantity to 0 to remove the item.',
+                inputSchema: z.object({
+                    orderLineId: z.string().describe('The order line ID from getActiveOrder results'),
+                    quantity: z.number().describe('The new absolute quantity. Set to 0 to remove.'),
+                }),
+                execute: async ({ orderLineId, quantity }) => this.toolAdjustOrderLine(ctx, { orderLineId, quantity }),
+            }),
+            getOrderHistory: tool({
+                description: 'Get the customer\'s past orders. Returns a list of orders with code, state, total, date, and items ordered.',
+                inputSchema: z.object({
+                    take: z.number().optional().describe('Max number of orders to return (default 5, max 10)'),
+                }),
+                execute: async ({ take }) => this.toolGetOrderHistory(ctx, { take }, customerId),
+            }),
+            trackOrder: tool({
+                description: 'Get the status and tracking information for a specific order.',
+                inputSchema: z.object({
+                    orderId: z.string().optional().describe('The order ID (numeric)'),
+                    orderCode: z.string().optional().describe('The order code (e.g. "A1B2C3D4")'),
+                }),
+                execute: async ({ orderId, orderCode }) => this.toolTrackOrder(ctx, { orderId, orderCode }, customerId),
+            }),
+            getAvailableCountries: tool({
+                description: 'List countries available for shipping/billing addresses.',
+                inputSchema: z.object({}),
+                execute: async () => this.toolGetAvailableCountries(ctx),
+            }),
+            getEligibleShippingMethods: tool({
+                description: 'Get available shipping methods for the active order. Call after the shipping address has been set.',
+                inputSchema: z.object({}),
+                execute: async () => this.toolGetEligibleShippingMethods(ctx),
+            }),
+            setShippingAddress: tool({
+                description: 'Set the shipping address on the active order. Requires all address fields.',
+                inputSchema: z.object({
+                    fullName: z.string().describe('Full name of the recipient'),
+                    streetLine1: z.string().describe('Street address line 1'),
+                    streetLine2: z.string().optional().describe('Street address line 2'),
+                    city: z.string().describe('City'),
+                    province: z.string().describe('State/province'),
+                    postalCode: z.string().describe('Postal/ZIP code'),
+                    countryCode: z.string().describe('Two-letter country code (e.g. "US", "GB")'),
+                    phoneNumber: z.string().describe('Phone number'),
+                    company: z.string().optional().describe('Company name'),
+                }),
+                execute: async (params) => this.toolSetShippingAddress(ctx, params),
+            }),
+            setBillingAddress: tool({
+                description: 'Set the billing address on the active order. Can be the same as shipping address.',
+                inputSchema: z.object({
+                    fullName: z.string().describe('Full name'),
+                    streetLine1: z.string().describe('Street address line 1'),
+                    streetLine2: z.string().optional().describe('Street address line 2'),
+                    city: z.string().describe('City'),
+                    province: z.string().describe('State/province'),
+                    postalCode: z.string().describe('Postal/ZIP code'),
+                    countryCode: z.string().describe('Two-letter country code'),
+                    phoneNumber: z.string().describe('Phone number'),
+                    company: z.string().optional().describe('Company name'),
+                }),
+                execute: async (params) => this.toolSetBillingAddress(ctx, params),
+            }),
+            setShippingMethod: tool({
+                description: 'Set the chosen shipping method on the active order. Use the id from getEligibleShippingMethods.',
+                inputSchema: z.object({
+                    shippingMethodId: z.string().describe('The shipping method ID from getEligibleShippingMethods'),
+                }),
+                execute: async ({ shippingMethodId }) => this.toolSetShippingMethod(ctx, { shippingMethodId }),
+            }),
+
+        };
+    }
+
+  
+    streamChat(
         ctx: RequestContext,
         userMessage: string,
-        conversationHistory: ChatCompletionMessageParam[] = [],
+        conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
         customerId?: string | number,
-    ): Promise<ChatResult> {
-        const messages: ChatCompletionMessageParam[] = [
+    ) {
+        const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
             { role: 'system', content: SYSTEM_PROMPT },
             ...conversationHistory,
             { role: 'user', content: userMessage },
         ];
+
+        const tools = this.buildTools(ctx, customerId);
+
+        return streamText({
+            model: this.openai('gpt-4o-mini'),
+            messages,
+            tools,
+            stopWhen: stepCountIs(5),
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+            onStepFinish: (step) => {
+                if (step.toolResults && step.toolResults.length > 0) {
+                    for (const result of step.toolResults) {
+                        this.logger.log(`Tool "${result.toolName}" completed`);
+                    }
+                }
+            },
+            onError: (event) => {
+                this.logger.error(`streamText error: ${event.error}`);
+            },
+        });
+    }
+
+ // yo chai stream bina use garna paryo vanee kailee
+    async chat(
+        ctx: RequestContext,
+        userMessage: string,
+        conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+        customerId?: string | number,
+    ): Promise<ChatResult> {
+        const result = this.streamChat(ctx, userMessage, conversationHistory, customerId);
+
+        const text = await result.text;
+        const steps = await result.steps;
 
         let allProducts: AiChatProduct[] = [];
         let allCollections: AiChatCollection[] = [];
         let allOrders: AiChatOrder[] = [];
         let addToCartAction: AddToCartAction | undefined;
         let activeOrder: AiActiveOrder | undefined;
+        let setShippingAddressAction: SetShippingAddressAction | undefined;
+        let setBillingAddressAction: SetBillingAddressAction | undefined;
+        let setShippingMethodAction: SetShippingMethodAction | undefined;
 
-        let maxIterations = 5;
-        let response = await this.client.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages,
-            tools: TOOLS,
-            tool_choice: 'auto',
-            temperature: 0.7,
-            max_tokens: 1024,
-        });
+        for (const step of steps) {
+            for (const toolResult of step.toolResults) {
+                const data = (toolResult as any).output ?? (toolResult as any).result;
+                if (!data) continue;
 
-        while (maxIterations > 0) {
-            const choice = response.choices[0];
-            if (!choice) break;
-
-            const msg = choice.message;
-
-            if (msg.tool_calls && msg.tool_calls.length > 0) {
-                messages.push(msg);
-
-                for (const toolCall of msg.tool_calls) {
-                    if (toolCall.type !== 'function') {
-                        messages.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            content: JSON.stringify({ error: 'Unsupported tool call type' }),
-                        });
-                        continue;
-                    }
-                    const { name, arguments: argsStr } = toolCall.function;
-                    let args: Record<string, unknown> = {};
-                    try {
-                        args = JSON.parse(argsStr);
-                    } catch {
-                        this.logger.warn(`Failed to parse tool args: ${argsStr}`);
-                    }
-
-                    this.logger.log(`Tool call: ${name}(${JSON.stringify(args)})`);
-
-                    const toolResult = await this.executeTool(ctx, name, args, customerId);
-
-                    if (toolResult.products.length > 0) {
-                        allProducts = this.mergeProducts(allProducts, toolResult.products);
-                    }
-                    if (toolResult.collections.length > 0) {
-                        allCollections = this.mergeCollections(allCollections, toolResult.collections);
-                    }
-                    if (toolResult.orders && toolResult.orders.length > 0) {
-                        allOrders = toolResult.orders;
-                    }
-                    if (toolResult.addToCartAction) {
-                        addToCartAction = toolResult.addToCartAction;
-                    }
-                    if (toolResult.activeOrder) {
-                        activeOrder = toolResult.activeOrder;
-                    }
-
-                    messages.push({
-                        role: 'tool',
-                        tool_call_id: toolCall.id,
-                        content: JSON.stringify(toolResult),
-                    });
+                if (data.products?.length > 0) {
+                    allProducts = this.mergeProducts(allProducts, data.products);
                 }
-
-                response = await this.client.chat.completions.create({
-                    model: 'gpt-4o-mini',
-                    messages,
-                    tools: TOOLS,
-                    tool_choice: 'auto',
-                    temperature: 0.7,
-                    max_tokens: 1024,
-                });
-
-                maxIterations--;
-            } else {
-                return {
-                    message: msg.content ?? '',
-                    products: allProducts.slice(0, MAX_CHAT_PRODUCTS),
-                    collections: allCollections.slice(0, MAX_CHAT_COLLECTIONS),
-                    addToCartAction,
-                    orders: allOrders.length > 0 ? allOrders : undefined,
-                    activeOrder,
-                };
+                if (data.collections?.length > 0) {
+                    allCollections = this.mergeCollections(allCollections, data.collections);
+                }
+                if (data.orders?.length > 0) {
+                    allOrders = data.orders;
+                }
+                if (data.addToCartAction) {
+                    addToCartAction = data.addToCartAction;
+                }
+                if (data.activeOrder) {
+                    activeOrder = data.activeOrder;
+                }
+                if (data.setShippingAddressAction) {
+                    setShippingAddressAction = data.setShippingAddressAction;
+                }
+                if (data.setBillingAddressAction) {
+                    setBillingAddressAction = data.setBillingAddressAction;
+                }
+                if (data.setShippingMethodAction) {
+                    setShippingMethodAction = data.setShippingMethodAction;
+                }
             }
         }
 
         return {
-            message: 'I found some results for you. Let me know if you need anything else!',
+            message: text,
             products: allProducts.slice(0, MAX_CHAT_PRODUCTS),
             collections: allCollections.slice(0, MAX_CHAT_COLLECTIONS),
             addToCartAction,
             orders: allOrders.length > 0 ? allOrders : undefined,
             activeOrder,
+            setShippingAddressAction,
+            setBillingAddressAction,
+            setShippingMethodAction,
         };
     }
 
-    // ──────────────────────────────────────────────
-    // Tool execution
-    // ──────────────────────────────────────────────
 
-    private async executeTool(
-        ctx: RequestContext,
-        toolName: string,
-        args: Record<string, unknown>,
-        customerId?: string | number,
-    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; addToCartAction?: AddToCartAction; orders?: AiChatOrder[]; activeOrder?: AiActiveOrder }> {
-        switch (toolName) {
-            case 'searchProducts':
-                return this.toolSearchProducts(ctx, args);
-            case 'vectorSearch':
-                return this.toolVectorSearch(ctx, args);
-            case 'getCollections':
-                return this.toolGetCollections(ctx, args);
-            case 'filterByPrice':
-                return this.toolFilterByPrice(ctx, args);
-            case 'addToCart':
-                return this.toolAddToCart(ctx, args);
-            case 'getActiveOrder':
-                return this.toolGetActiveOrder(ctx, args);
-            case 'adjustOrderLine':
-                return this.toolAdjustOrderLine(ctx, args);
-            case 'getOrderHistory':
-                return this.toolGetOrderHistory(ctx, args, customerId);
-            case 'trackOrder':
-                return this.toolTrackOrder(ctx, args, customerId);
-            default:
-                return { products: [], collections: [], summary: `Unknown tool: ${toolName}` };
-        }
-    }
-
-    /**
-     * searchProducts: uses Vendure's FulltextSearchService (DefaultSearchPlugin)
-     * — same search index as the storefront, supports full-text ranking.
-     * Falls back to raw DB query if FulltextSearchService is unavailable.
-     */
     private async toolSearchProducts(
         ctx: RequestContext,
         args: Record<string, unknown>,
@@ -550,7 +531,7 @@ export class AiChatService implements OnModuleInit {
                     name: String(item.productName ?? ''),
                     slug: String(item.slug ?? ''),
                     price: Number(price),
-                    image: item.productAsset?.preview ?? null,
+                    image: this.resolveAssetUrl(item.productAsset?.preview ?? null),
                     variantId: String(item.productVariantId),
                 };
             });
@@ -582,9 +563,7 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
-    /**
-     * vectorSearch: semantic search
-     */
+  
     private async toolVectorSearch(
         ctx: RequestContext,
         args: Record<string, unknown>,
@@ -632,9 +611,7 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
-    /**
-     * getCollections: list collections
-     */
+  
     private async toolGetCollections(
         ctx: RequestContext,
         args: Record<string, unknown>,
@@ -675,8 +652,7 @@ export class AiChatService implements OnModuleInit {
         let mapped: AiChatProduct[];
 
         if (query && this.fulltextSearchService) {
-            // Use Vendure's search index for keyword matching (supports collection names, facets, etc.)
-            // Fetch a larger batch so we have enough candidates after price filtering
+           
             const fetchSize = 50;
             const result = await this.fulltextSearchService.search(ctx, {
                 term: query,
@@ -699,7 +675,7 @@ export class AiChatService implements OnModuleInit {
                     name: String(item.productName ?? ''),
                     slug: String(item.slug ?? ''),
                     price: Number(price),
-                    image: item.productAsset?.preview ?? null,
+                    image: this.resolveAssetUrl(item.productAsset?.preview ?? null),
                     variantId: String(item.productVariantId),
                 };
             });
@@ -763,10 +739,7 @@ export class AiChatService implements OnModuleInit {
         };
     }
 
-    /**
-     * addToCart: returns an action for the frontend to execute.
-     * Validates that the variantId looks like a real numeric ID.
-     */
+  
     private async toolAddToCart(
         _ctx: RequestContext,
         args: Record<string, unknown>,
@@ -807,9 +780,29 @@ export class AiChatService implements OnModuleInit {
 
         const actualProductName = (variant as any).product?.translations?.[0]?.name
             ?? (variant as any).translations?.[0]?.name
-            ?? productName ?? 'item';
+            ?? 'item';
 
-        this.logger.log(`addToCart verified: variantId=${variantId} is "${actualProductName}" (variant: ${(variant as any).translations?.[0]?.name ?? variant.id})`);
+        this.logger.log(`addToCart verified: variantId=${variantId} is "${actualProductName}" (variant: ${(variant as any).translations?.[0]?.name ?? variant.id}), LLM said productName="${productName}"`);
+
+        // Safety check: if the LLM provided a productName, verify it roughly matches the actual product
+        if (productName && actualProductName !== 'item') {
+            const requestedLower = productName.toLowerCase().trim();
+            const actualLower = actualProductName.toLowerCase().trim();
+            // Check if neither name contains the other (very loose match)
+            const isMatch = actualLower.includes(requestedLower)
+                || requestedLower.includes(actualLower)
+                || actualLower.split(/\s+/).some((w: string) => requestedLower.includes(w))
+                || requestedLower.split(/\s+/).some((w: string) => actualLower.includes(w));
+
+            if (!isMatch) {
+                this.logger.warn(`addToCart MISMATCH: LLM requested "${productName}" but variantId ${variantId} is "${actualProductName}". Rejecting.`);
+                return {
+                    products: [],
+                    collections: [],
+                    summary: `Error: The variantId ${variantId} corresponds to "${actualProductName}", but you are trying to add "${productName}". These don't match. Please search for "${productName}" first to get the correct variantId.`,
+                };
+            }
+        }
 
         return {
             products: [],
@@ -1034,14 +1027,206 @@ export class AiChatService implements OnModuleInit {
         }
     }
 
-    // ──────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────
+ 
+    private async toolGetAvailableCountries(
+        ctx: RequestContext,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string }> {
+        try {
+            const result = await this.connection.rawConnection.query(
+                `SELECT r.id, r.code, t.name
+                 FROM region r
+                 JOIN region_translation t ON t."baseId" = r.id
+                 WHERE r.type = 'country' AND r.enabled = true
+                 ORDER BY t.name ASC`
+            );
+            const countries = (result as any[]).map(r => ({
+                id: String(r.id),
+                code: String(r.code),
+                name: String(r.name),
+            }));
+            return {
+                products: [],
+                collections: [],
+                summary: countries.length > 0
+                    ? `Available countries: ${countries.map(c => `${c.name} (${c.code})`).join(', ')}`
+                    : 'No countries available.',
+            };
+        } catch (e) {
+            this.logger.error(`Error fetching countries: ${e}`);
+            return { products: [], collections: [], summary: 'Error fetching available countries.' };
+        }
+    }
+
+    private async toolGetEligibleShippingMethods(
+        ctx: RequestContext,
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string }> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to view shipping methods.' };
+        }
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            if (!order) {
+                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+            }
+            const methods = await this.orderService.getEligibleShippingMethods(ctx, order.id);
+            const mapped = methods.map((m: any) => ({
+                id: String(m.id),
+                name: String(m.name ?? ''),
+                code: String(m.code ?? ''),
+                description: String(m.description ?? ''),
+                priceWithTax: Number(m.priceWithTax ?? m.price ?? 0),
+            }));
+            return {
+                products: [],
+                collections: [],
+                summary: mapped.length > 0
+                    ? `Available shipping methods: ${mapped.map(m => `"${m.name}" (id: ${m.id}, price: ${m.priceWithTax}, code: ${m.code})`).join(', ')}`
+                    : 'No shipping methods available. Make sure a shipping address is set first.',
+            };
+        } catch (e) {
+            this.logger.error(`Error fetching shipping methods: ${e}`);
+            return { products: [], collections: [], summary: 'Error fetching shipping methods. Make sure a shipping address has been set.' };
+        }
+    }
+
+    private async toolSetShippingAddress(
+        ctx: RequestContext,
+        params: {
+            fullName: string; streetLine1: string; streetLine2?: string;
+            city: string; province: string; postalCode: string;
+            countryCode: string; phoneNumber: string; company?: string;
+        },
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; setShippingAddressAction?: SetShippingAddressAction }> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to set a shipping address.' };
+        }
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            if (!order) {
+                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+            }
+            // Validate required fields
+            const required = ['fullName', 'streetLine1', 'city', 'province', 'postalCode', 'countryCode', 'phoneNumber'] as const;
+            for (const field of required) {
+                if (!params[field]?.trim()) {
+                    return { products: [], collections: [], summary: `Error: Missing required field "${field}" for shipping address.` };
+                }
+            }
+            // Set address via OrderService
+            const result = await this.orderService.setShippingAddress(ctx, order.id, {
+                fullName: params.fullName,
+                streetLine1: params.streetLine1,
+                streetLine2: params.streetLine2 ?? '',
+                city: params.city,
+                province: params.province,
+                postalCode: params.postalCode,
+                countryCode: params.countryCode,
+                phoneNumber: params.phoneNumber,
+                company: params.company ?? '',
+            });
+            if (isGraphQlErrorResult(result)) {
+                const errorMsg = (result as any).message ?? 'Unknown error';
+                return { products: [], collections: [], summary: `Error setting shipping address: ${errorMsg}` };
+            }
+            return {
+                products: [],
+                collections: [],
+                summary: `Shipping address set successfully for ${params.fullName}, ${params.streetLine1}, ${params.city}, ${params.province} ${params.postalCode}, ${params.countryCode}.`,
+                setShippingAddressAction: { ...params },
+            };
+        } catch (e) {
+            this.logger.error(`Error setting shipping address: ${e}`);
+            return { products: [], collections: [], summary: 'Error setting shipping address. Please try again.' };
+        }
+    }
+
+    private async toolSetBillingAddress(
+        ctx: RequestContext,
+        params: {
+            fullName: string; streetLine1: string; streetLine2?: string;
+            city: string; province: string; postalCode: string;
+            countryCode: string; phoneNumber: string; company?: string;
+        },
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; setBillingAddressAction?: SetBillingAddressAction }> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to set a billing address.' };
+        }
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            if (!order) {
+                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+            }
+            const required = ['fullName', 'streetLine1', 'city', 'province', 'postalCode', 'countryCode', 'phoneNumber'] as const;
+            for (const field of required) {
+                if (!params[field]?.trim()) {
+                    return { products: [], collections: [], summary: `Error: Missing required field "${field}" for billing address.` };
+                }
+            }
+            const result = await this.orderService.setBillingAddress(ctx, order.id, {
+                fullName: params.fullName,
+                streetLine1: params.streetLine1,
+                streetLine2: params.streetLine2 ?? '',
+                city: params.city,
+                province: params.province,
+                postalCode: params.postalCode,
+                countryCode: params.countryCode,
+                phoneNumber: params.phoneNumber,
+                company: params.company ?? '',
+            });
+            if (isGraphQlErrorResult(result)) {
+                const errorMsg = (result as any).message ?? 'Unknown error';
+                return { products: [], collections: [], summary: `Error setting billing address: ${errorMsg}` };
+            }
+            return {
+                products: [],
+                collections: [],
+                summary: `Billing address set successfully for ${params.fullName}, ${params.streetLine1}, ${params.city}, ${params.province} ${params.postalCode}, ${params.countryCode}.`,
+                setBillingAddressAction: { ...params },
+            };
+        } catch (e) {
+            this.logger.error(`Error setting billing address: ${e}`);
+            return { products: [], collections: [], summary: 'Error setting billing address. Please try again.' };
+        }
+    }
+
+    private async toolSetShippingMethod(
+        ctx: RequestContext,
+        params: { shippingMethodId: string },
+    ): Promise<{ products: AiChatProduct[]; collections: AiChatCollection[]; summary: string; setShippingMethodAction?: SetShippingMethodAction }> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to set a shipping method.' };
+        }
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            if (!order) {
+                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+            }
+            if (!params.shippingMethodId || !/^\d+$/.test(params.shippingMethodId)) {
+                return { products: [], collections: [], summary: 'Error: Invalid shippingMethodId. Use getEligibleShippingMethods first to get valid IDs.' };
+            }
+            const result = await this.orderService.setShippingMethod(ctx, order.id, [params.shippingMethodId]);
+            if (isGraphQlErrorResult(result)) {
+                const errorMsg = (result as any).message ?? 'Unknown error';
+                return { products: [], collections: [], summary: `Error setting shipping method: ${errorMsg}` };
+            }
+            // Get the updated order to show shipping cost
+            const updatedOrder = result as Order;
+            const shippingCost = (updatedOrder as any).shippingWithTax ?? (updatedOrder as any).shipping ?? 0;
+            return {
+                products: [],
+                collections: [],
+                summary: `Shipping method set successfully. Shipping cost: ${shippingCost}. Order total: ${(updatedOrder as any).totalWithTax ?? 0}.`,
+                setShippingMethodAction: { shippingMethodId: params.shippingMethodId },
+            };
+        } catch (e) {
+            this.logger.error(`Error setting shipping method: ${e}`);
+            return { products: [], collections: [], summary: 'Error setting shipping method. Please try again.' };
+        }
+    }
 
     private mapOrders(orders: Order[]): AiChatOrder[] {
         return orders.map(order => {
             const lines = ((order as any).lines ?? []).map((line: any) => {
-                // Try multiple paths to get the product name
                 const name = line.productVariant?.translations?.[0]?.name
                     || line.productVariant?.name
                     || 'Unknown product';
@@ -1107,7 +1292,7 @@ export class AiChatService implements OnModuleInit {
                 name: String(name),
                 slug: String(slug),
                 price: Number(priceValue),
-                image: image ?? null,
+                image: this.resolveAssetUrl(image),
                 variantId,
             });
         }

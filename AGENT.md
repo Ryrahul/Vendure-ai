@@ -3,6 +3,12 @@
 
 ---
 
+## Migration: Vercel AI SDK + Checkout Tools (COMPLETED)
+
+The assistant has been migrated from the **direct OpenAI client** to the **Vercel AI SDK** (`streamText` + `tool()` with zod schemas + `stepCountIs()` for multi-step tool calling). **Checkout tools** (shipping address, billing address, shipping method, eligible shipping methods, available countries) have been added. The frontend uses `useChat()` from `@ai-sdk/react` with `DefaultChatTransport` for real-time streaming. See `task.md` for the original spec.
+
+---
+
 ## Purpose
 
 This AI Agent is a **proper ecommerce shopping assistant** for Vendure that:
@@ -29,31 +35,35 @@ The AI assistant **only works for logged-in customers**. The chat endpoint must 
 ## Architecture Overview
 
 ```
-User Message + Conversation History + Auth Token (cookie/bearer)
+User Message + Auth Token (cookie/bearer)
        ↓
 Next.js API Route (proxy, forwards auth headers)
+  - Extracts latest user message + history from useChat() messages array
+  - Forwards to Vendure streaming endpoint
        ↓
-Vendure REST Controller (POST /ai-assistant/chat)
+Vendure REST Controller
+  - POST /ai-assistant/stream (streaming, AI SDK UI message stream protocol)
+  - POST /ai-assistant/chat (non-streaming JSON, backward compatible)
   - Extracts authenticated customer session from request
-  - Rejects unauthenticated requests
        ↓
-AiChatService (with authenticated RequestContext)
+AiChatService.streamChat() (Vercel AI SDK)
        ↓
-OpenAI Chat Completions API (GPT-4o-mini)
+streamText() with GPT-4o-mini
   - System prompt (store-focused, off-topic rejection)
-  - Conversation history
-  - Tool definitions (9 tools)
+  - 14 tool definitions (zod schemas + execute functions)
+  - stopWhen: stepCountIs(5) for multi-step tool calling
        ↓
 LLM decides: respond directly OR call tools
        ↓
-If tool calls → execute against Vendure DB/Shop API → return results to LLM
+If tool calls → SDK auto-executes tool functions → returns results to LLM
   - Product tools: search DB directly
-  - Order tools: query via Shop API with customer's session context
-  - Cart tools: add to cart (action signal for frontend), view/adjust cart (server-side via OrderService)
+  - Order tools: query via OrderService with customer's session context
+  - Cart tools: add to cart (action signal), view/adjust cart (server-side)
+  - Checkout tools: set addresses, get/set shipping methods (server-side via OrderService)
        ↓
-LLM formats final conversational response
+LLM formats final conversational response (streamed to frontend)
        ↓
-Return: { message, products[], collections[], orders[], addToCartAction?, activeOrder? }
+Stream: UI message stream with text parts + tool invocation parts (products, collections, cart, orders, checkout actions)
 ```
 
 ---
@@ -215,6 +225,22 @@ No parameters — always returns the current active order for the authenticated 
 
 ---
 
+## Checkout tools (IMPLEMENTED)
+
+These tools allow the assistant to guide users through the order process up to the **shipping step**. They execute server-side via Vendure's `OrderService`.
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| **getAvailableCountries** | List countries available for address selection. | None. |
+| **getEligibleShippingMethods** | Get available shipping methods for the active order (after address is set). | None. |
+| **setShippingAddress** | Set shipping address on the active order via `OrderService.setShippingAddress()`. | fullName, streetLine1, streetLine2?, city, province, postalCode, countryCode, phoneNumber, company?. |
+| **setBillingAddress** | Set billing address on the active order via `OrderService.setBillingAddress()`. | Same as setShippingAddress. |
+| **setShippingMethod** | Set chosen shipping method on the active order via `OrderService.setShippingMethod()`. | `shippingMethodId` (string, from getEligibleShippingMethods). |
+
+All require an **authenticated customer** and an **active order**. Address/shipping method operations execute server-side and also return action signals (e.g. `setShippingAddressAction`) that the frontend can use to refresh checkout state.
+
+---
+
 ## User Intent → Behavior Mapping
 
 | User says | Bot behavior |
@@ -239,6 +265,10 @@ No parameters — always returns the current active order for the authenticated 
 | "Who is Elon Musk?" | Politely refuses, redirects to shopping |
 | "Write me a poem" | Politely refuses, redirects to shopping |
 | "Do you have returns?" | Answers with general store info (no tool needed) |
+| *(Phase 2)* "Set my shipping address to …" | setShippingAddress with collected address |
+| *(Phase 2)* "Use the same for billing" | setBillingAddress (same as shipping) |
+| *(Phase 2)* "What shipping options do I have?" | getEligibleShippingMethods, then describe options |
+| *(Phase 2)* "Use standard shipping" / "Pick the first one" | setShippingMethod with chosen id |
 
 **When tools return no products:** Bot honestly says no matching products were found. Never invents products.
 
@@ -382,26 +412,29 @@ AiAssistantPlugin.init({
 
 ## Technical Stack
 
-- **LLM:** OpenAI GPT-4o-mini (chat completions with tool calling)
+- **LLM:** OpenAI GPT-4o-mini via **Vercel AI SDK v6** (`streamText` + `tool()` with zod schemas + `stepCountIs()`)
+- **AI SDK packages:** `ai@6.x`, `@ai-sdk/openai@3.x` (backend), `@ai-sdk/react@3.x` (frontend)
 - **Embeddings:** OpenAI text-embedding-3-small (1536 dimensions)
 - **Vector DB:** pgvector extension in PostgreSQL
-- **Backend:** Vendure plugin (NestJS controller + services)
-- **Frontend:** Next.js chat panel (React, shadcn/ui)
-- **Proxy:** Next.js API route → Vendure REST endpoint
+- **Backend:** Vendure plugin (NestJS controller + services). Streaming via `toUIMessageStreamResponse()`.
+- **Frontend:** Next.js chat panel (React, shadcn/ui) using `useChat()` from `@ai-sdk/react` with `DefaultChatTransport`
+- **Proxy:** Next.js API route → Vendure REST streaming endpoint (`/ai-assistant/stream`)
+- **Vendure reference:** [Shop API](https://docs.vendure.io/reference/graphql-api/shop/mutations), [Checkout flow](https://docs.vendure.io/guides/storefront/checkout-flow/).
 
 ---
 
 ## Extensibility Roadmap
 
-**Phase 2 (next):**
-- Set shipping/billing address from chat
-- Select shipping method conversationally
-- Complete checkout flow end-to-end through the assistant
+**Phase 2 (COMPLETED):**
+- Migrated to **Vercel AI SDK v6** (`streamText` + `tool()` + `stepCountIs()`, streaming enabled).
+- **Checkout tools:** setShippingAddress, setBillingAddress, getEligibleShippingMethods, setShippingMethod, getAvailableCountries — all execute server-side via OrderService.
+- Frontend uses `useChat()` with `DefaultChatTransport` for real-time streaming.
+- Tool results (products, collections, cart, checkout actions) are extracted from UI message parts on the frontend.
 
-**Phase 3:**
+**Phase 3 (later):**
+- Transition to payment & place order from chat (if desired)
 - Personalized recommendations based on order history
 - Analytics & conversation insights
-- Streaming responses
 - Multi-language support
 
 ---
@@ -425,6 +458,6 @@ AiAssistantPlugin.init({
 - Structured safe output
 - "Not available" when products not in catalog
 
-**Not yet covered:**
-- Checkout flow (address, shipping method, payment)
-- Streaming responses
+**Not yet covered (Phase 3):**
+- Payment / place order from chat
+- Personalized recommendations based on order history

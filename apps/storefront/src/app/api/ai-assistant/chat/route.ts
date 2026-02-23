@@ -8,6 +8,44 @@ function getVendureBase(): string {
     return VENDURE_API_URL.replace(/\/shop-api\/?$/, '');
 }
 
+
+function getTextFromMessage(msg: Record<string, unknown>): string {
+    if (Array.isArray(msg.parts)) {
+        return (msg.parts as Array<Record<string, unknown>>)
+            .filter(p => p.type === 'text' && typeof p.text === 'string')
+            .map(p => p.text as string)
+            .join('');
+    }
+    if (typeof msg.content === 'string') {
+        return msg.content;
+    }
+    return '';
+}
+
+
+function getAssistantContentWithToolContext(msg: Record<string, unknown>): string {
+    if (!Array.isArray(msg.parts)) {
+        return typeof msg.content === 'string' ? msg.content : '';
+    }
+
+    const parts: string[] = [];
+
+    for (const p of msg.parts as Array<Record<string, unknown>>) {
+        if (p.type === 'text' && typeof p.text === 'string') {
+            parts.push(p.text);
+        }
+        if (typeof p.type === 'string' && p.state === 'output-available' && p.output) {
+            const output = p.output as Record<string, unknown>;
+            if (typeof output.summary === 'string') {
+                parts.push(`[Tool result: ${output.summary}]`);
+            }
+        }
+    }
+
+    return parts.join('\n');
+}
+
+
 export async function POST(request: NextRequest) {
     const base = getVendureBase();
     if (!base) {
@@ -16,7 +54,8 @@ export async function POST(request: NextRequest) {
             {status: 503}
         );
     }
-    let body: { message?: string; history?: Array<{ role: string; content: string }> };
+
+    let body: Record<string, unknown>;
     try {
         body = await request.json();
     } catch {
@@ -25,7 +64,45 @@ export async function POST(request: NextRequest) {
             {status: 400}
         );
     }
-    const message = typeof body?.message === 'string' ? body.message.trim() : '';
+
+    console.log('[ai-assistant route] Received body keys:', Object.keys(body));
+
+    let message = '';
+    let history: Array<{ role: string; content: string }> = [];
+
+    if (body.messages && Array.isArray(body.messages)) {
+  
+        const msgs = body.messages as Array<Record<string, unknown>>;
+
+        console.log('[ai-assistant route] Messages count:', msgs.length);
+        if (msgs.length > 0) {
+            const last = msgs[msgs.length - 1];
+            console.log('[ai-assistant route] Last msg role:', last?.role, 'parts:', JSON.stringify((last as Record<string, unknown>)?.parts)?.slice(0, 200));
+        }
+
+        const lastUserMsg = [...msgs].reverse().find(m => m.role === 'user');
+        message = lastUserMsg ? getTextFromMessage(lastUserMsg).trim() : '';
+
+        const lastUserIndex = msgs.lastIndexOf(lastUserMsg!);
+        const historyMsgs = lastUserIndex > 0 ? msgs.slice(0, lastUserIndex) : [];
+        history = historyMsgs
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .map(m => ({
+                role: String(m.role),
+                content: m.role === 'assistant'
+                    ? getAssistantContentWithToolContext(m)
+                    : getTextFromMessage(m),
+            }))
+            .filter(m => m.content.length > 0);
+    } else if (typeof body.message === 'string') {
+        message = body.message.trim();
+        history = Array.isArray(body.history)
+            ? (body.history as Array<{ role: string; content: string }>)
+            : [];
+    }
+
+    console.log('[ai-assistant route] Extracted message:', JSON.stringify(message).slice(0, 200));
+
     if (!message) {
         return NextResponse.json(
             {message: 'Send a message to get started.', products: [], collections: []},
@@ -33,9 +110,6 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    const history = Array.isArray(body?.history) ? body.history : [];
-
-    // Build headers, forwarding the auth token if present
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
     };
@@ -45,12 +119,13 @@ export async function POST(request: NextRequest) {
         headers['Authorization'] = `Bearer ${authToken}`;
     }
 
-    const url = `${base}/ai-assistant/chat`;
+    const url = `${base}/ai-assistant/stream`;
     const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message, history }),
+        body: JSON.stringify({message, history}),
     });
+
     if (!res.ok) {
         const text = await res.text();
         console.error('[ai-assistant proxy] backend error:', res.status, text);
@@ -59,45 +134,16 @@ export async function POST(request: NextRequest) {
             {status: 502}
         );
     }
-    const data = (await res.json()) as {
-        message: string;
-        products?: Array<{ id: string; name: string; slug: string; price: number; image: string | null; variantId: string }>;
-        collections?: Array<{ id: string; name: string; slug: string }>;
-        addToCartAction?: { variantId: string; quantity: number; productName?: string };
-        orders?: Array<{
-            id: string;
-            code: string;
-            state: string;
-            total: number;
-            orderPlacedAt: string | null;
-            lines: Array<{ productName: string; quantity: number }>;
-            fulfillments: Array<{ state: string; method: string; trackingCode: string | null }>;
-        }>;
-        activeOrder?: {
-            id: string;
-            code: string;
-            totalQuantity: number;
-            totalWithTax: number;
-            lines: Array<{
-                orderLineId: string;
-                productName: string;
-                variantId: string;
-                quantity: number;
-                linePriceWithTax: number;
-            }>;
-        };
-    };
-    const assetsBase = `${base}/assets/`;
-    const products = (data.products || []).map((p) => ({
-        ...p,
-        image: p.image ? `${assetsBase}${p.image}` : null,
-    }));
-    return NextResponse.json({
-        message: data.message,
-        products,
-        collections: data.collections || [],
-        addToCartAction: data.addToCartAction || null,
-        orders: data.orders || null,
-        activeOrder: data.activeOrder || null,
+
+    const responseHeaders = new Headers();
+    res.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'content-type' || key.toLowerCase().startsWith('x-')) {
+            responseHeaders.set(key, value);
+        }
+    });
+
+    return new Response(res.body, {
+        status: res.status,
+        headers: responseHeaders,
     });
 }
