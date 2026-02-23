@@ -77,6 +77,8 @@ export const config: VendureConfig = {
         AiAssistantPlugin.init({
             openaiApiKey: process.env.OPENAI_API_KEY ?? '',
             embeddingModel: 'text-embedding-3-small',
+            // Must match AssetServerPlugin's public URL so chat product images resolve correctly
+            assetBaseUrl: IS_DEV ? undefined : 'http://3.110.193.232:3000/assets/',
         }),
         EmailPlugin.init({
             devMode: true,

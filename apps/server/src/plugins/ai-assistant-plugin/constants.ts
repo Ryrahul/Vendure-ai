@@ -14,4 +14,10 @@ export const MAX_CHAT_COLLECTIONS = 3;
 export interface AiAssistantPluginOptions {
     openaiApiKey: string;
     embeddingModel?: string;
+    /**
+     * Base URL for product asset images. Should match your AssetServerPlugin's
+     * public URL including the route, e.g. "https://my-vendure.com/assets/".
+     * If not set, will be auto-detected from apiOptions (works for dev).
+     */
+    assetBaseUrl?: string;
 }

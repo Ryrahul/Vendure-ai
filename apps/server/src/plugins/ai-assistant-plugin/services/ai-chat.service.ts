@@ -251,17 +251,23 @@ export class AiChatService implements OnModuleInit {
             this.logger.warn('FulltextSearchService not available, falling back to DB queries for search');
         }
 
-        // Build asset URL prefix from Vendure server config
-        try {
-            const { apiOptions } = this.configService;
-            const hostname = apiOptions.hostname || 'localhost';
-            const port = apiOptions.port || 3000;
-            // AssetServerPlugin uses 'assets' as the route by default
-            this.assetUrlPrefix = `http://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${port}/assets/`;
-            this.logger.log(`Asset URL prefix resolved: ${this.assetUrlPrefix}`);
-        } catch (e) {
-            this.assetUrlPrefix = 'http://localhost:3000/assets/';
-            this.logger.warn(`Could not resolve asset URL prefix, using default: ${this.assetUrlPrefix}`);
+        // Resolve asset URL prefix: explicit config > auto-detect from apiOptions
+        if (this.options.assetBaseUrl) {
+            this.assetUrlPrefix = this.options.assetBaseUrl.endsWith('/')
+                ? this.options.assetBaseUrl
+                : this.options.assetBaseUrl + '/';
+            this.logger.log(`Asset URL prefix from config: ${this.assetUrlPrefix}`);
+        } else {
+            try {
+                const { apiOptions } = this.configService;
+                const hostname = apiOptions.hostname || 'localhost';
+                const port = apiOptions.port || 3000;
+                this.assetUrlPrefix = `http://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${port}/assets/`;
+                this.logger.log(`Asset URL prefix auto-detected: ${this.assetUrlPrefix}`);
+            } catch (e) {
+                this.assetUrlPrefix = '/assets/';
+                this.logger.warn(`Could not resolve asset URL prefix, using relative: ${this.assetUrlPrefix}`);
+            }
         }
     }
 
