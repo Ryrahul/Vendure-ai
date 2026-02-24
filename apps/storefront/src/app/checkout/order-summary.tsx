@@ -6,6 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { OrderLine } from './types';
 import { useCheckout } from './checkout-provider';
 import { Price } from '@/components/commerce/price';
+import { normalizeAssetUrl } from '@/lib/assets';
 
 export default function OrderSummary() {
   const { order } = useCheckout();
@@ -21,7 +22,7 @@ export default function OrderSummary() {
               {line.productVariant.product.featuredAsset && (
                 <div className="flex-shrink-0 w-15 h-15">
                   <Image
-                    src={line.productVariant.product.featuredAsset.preview}
+                    src={normalizeAssetUrl(line.productVariant.product.featuredAsset.preview)}
                     alt={line.productVariant.name}
                     width={60}
                     height={60}

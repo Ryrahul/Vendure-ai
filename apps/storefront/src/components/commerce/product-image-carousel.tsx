@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { normalizeAssetUrl } from '@/lib/assets';
 
 interface ProductImageCarouselProps {
     images: Array<{
@@ -37,7 +38,7 @@ export function ProductImageCarousel({ images }: ProductImageCarouselProps) {
             {/* Main Image */}
             <div className="relative aspect-square bg-muted rounded-lg overflow-hidden group">
                 <Image
-                    src={images[currentIndex].source}
+                    src={normalizeAssetUrl(images[currentIndex].source)}
                     alt={`Product image ${currentIndex + 1}`}
                     fill
                     className="object-cover"
@@ -89,7 +90,7 @@ export function ProductImageCarousel({ images }: ProductImageCarouselProps) {
                             }`}
                         >
                             <Image
-                                src={image.preview}
+                                src={normalizeAssetUrl(image.preview)}
                                 alt={`Thumbnail ${index + 1}`}
                                 fill
                                 className="object-cover"

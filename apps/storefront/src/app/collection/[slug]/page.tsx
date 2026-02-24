@@ -13,6 +13,7 @@ import {
     buildCanonicalUrl,
     buildOgImages,
 } from '@/lib/metadata';
+import { normalizeAssetUrl } from '@/lib/assets';
 
 async function getCollectionProducts(slug: string, searchParams: { [key: string]: string | string[] | undefined }) {
     'use cache';
@@ -66,14 +67,14 @@ export async function generateMetadata({
             description,
             type: 'website',
             url: buildCanonicalUrl(`/collection/${collection.slug}`),
-            images: buildOgImages(collection.featuredAsset?.preview, collection.name),
+            images: buildOgImages(collection.featuredAsset?.preview ? normalizeAssetUrl(collection.featuredAsset.preview) : undefined, collection.name),
         },
         twitter: {
             card: 'summary_large_image',
             title: collection.name,
             description,
             images: collection.featuredAsset?.preview
-                ? [collection.featuredAsset.preview]
+                ? [normalizeAssetUrl(collection.featuredAsset.preview)]
                 : undefined,
         },
     };

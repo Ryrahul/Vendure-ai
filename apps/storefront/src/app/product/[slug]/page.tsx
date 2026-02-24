@@ -18,6 +18,7 @@ import {
     buildCanonicalUrl,
     buildOgImages,
 } from '@/lib/metadata';
+import { normalizeAssetUrl } from '@/lib/assets';
 
 async function getProductData(slug: string) {
     'use cache';
@@ -41,7 +42,7 @@ export async function generateMetadata({
     }
 
     const description = truncateDescription(product.description);
-    const ogImage = product.assets?.[0]?.preview;
+    const ogImage = product.assets?.[0]?.preview ? normalizeAssetUrl(product.assets[0].preview) : undefined;
 
     return {
         title: product.name,

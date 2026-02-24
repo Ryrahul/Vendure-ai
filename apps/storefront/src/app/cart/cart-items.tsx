@@ -4,6 +4,7 @@ import {Button} from '@/components/ui/button';
 import {Minus, Plus, X} from 'lucide-react';
 import {Price} from '@/components/commerce/price';
 import {removeFromCart, adjustQuantity} from './actions';
+import { normalizeAssetUrl } from '@/lib/assets';
 
 type ActiveOrder = {
     id: string;
@@ -58,7 +59,7 @@ export async function CartItems({activeOrder}: { activeOrder: ActiveOrder | null
                             className="flex-shrink-0"
                         >
                             <Image
-                                src={line.productVariant.product.featuredAsset.preview}
+                                src={normalizeAssetUrl(line.productVariant.product.featuredAsset.preview)}
                                 alt={line.productVariant.name}
                                 width={120}
                                 height={120}

@@ -4,6 +4,7 @@ import {ProductCardFragment} from '@/lib/vendure/fragments';
 import {Price} from '@/components/commerce/price';
 import {Suspense} from "react";
 import Link from "next/link";
+import { normalizeAssetUrl } from '@/lib/assets';
 
 interface ProductCardProps {
     product: FragmentOf<typeof ProductCardFragment>;
@@ -20,7 +21,7 @@ export function ProductCard({product: productProp}: ProductCardProps) {
             <div className="aspect-square relative bg-muted">
                 {product.productAsset ? (
                     <Image
-                        src={product.productAsset.preview}
+                        src={normalizeAssetUrl(product.productAsset.preview)}
                         alt={product.productName}
                         fill
                         className="object-cover group-hover:scale-105 transition-transform duration-300"

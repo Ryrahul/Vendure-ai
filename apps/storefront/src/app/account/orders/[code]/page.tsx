@@ -8,6 +8,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Separator} from '@/components/ui/separator';
 import Image from 'next/image';
 import {getActiveCustomer} from "@/lib/vendure/actions";
+import { normalizeAssetUrl } from '@/lib/assets';
 import {notFound, redirect} from "next/navigation";
 import {Price} from '@/components/commerce/price';
 import {OrderStatusBadge} from '@/components/commerce/order-status-badge';
@@ -80,7 +81,7 @@ export default async function OrderDetailPage(props: PageProps<'/account/orders/
                                             className="relative h-20 w-20 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
                                             {line.productVariant.product.featuredAsset && (
                                                 <Image
-                                                    src={line.productVariant.product.featuredAsset.preview}
+                                                    src={normalizeAssetUrl(line.productVariant.product.featuredAsset.preview)}
                                                     alt={line.productVariant.name}
                                                     fill
                                                     className="object-cover"
