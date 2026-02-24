@@ -11,7 +11,7 @@ import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import 'dotenv/config';
 import path from 'path';
-import { AiAssistantPlugin } from './plugins/ai-assistant-plugin';
+import { AiAssistantPlugin } from '@rahul_vendure/ai-chat-plugin';
 
 const IS_DEV = process.env.APP_ENV === 'dev';
 const serverPort = +process.env.PORT || 3000;

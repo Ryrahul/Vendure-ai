@@ -1,0 +1,260 @@
+import { Body, Controller, Post, Req, Res, Logger } from '@nestjs/common';
+import { Request, Response } from 'express';
+import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
+import {
+    AiChatService,
+    AiChatProduct,
+    AiChatCollection,
+    AddToCartAction,
+    AiChatOrder,
+    AiActiveOrder,
+    AiCartLine,
+    SetShippingAddressAction,
+    SetBillingAddressAction,
+    SetShippingMethodAction,
+} from '../services/ai-chat.service';
+
+export type {
+    AiChatProduct,
+    AiChatCollection,
+    AddToCartAction,
+    AiChatOrder,
+    AiActiveOrder,
+    AiCartLine,
+    SetShippingAddressAction,
+    SetBillingAddressAction,
+    SetShippingMethodAction,
+} from '../services/ai-chat.service';
+
+export interface AiChatRequest {
+    /** Direct message (simple format) */
+    message?: string;
+    /** Conversation history from the frontend for multi-turn context (simple format) */
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    /** AI SDK UIMessage array (sent by DefaultChatTransport / useChat()) */
+    messages?: Array<{
+        role: string;
+        content?: string;
+        parts?: Array<{ type: string; text?: string; [key: string]: unknown }>;
+        [key: string]: unknown;
+    }>;
+}
+
+export interface AiChatResponse {
+    message: string;
+    products: AiChatProduct[];
+    collections: AiChatCollection[];
+    addToCartAction?: AddToCartAction;
+    orders?: AiChatOrder[];
+    activeOrder?: AiActiveOrder;
+    setShippingAddressAction?: SetShippingAddressAction;
+    setBillingAddressAction?: SetBillingAddressAction;
+    setShippingMethodAction?: SetShippingMethodAction;
+}
+
+/**
+ * REST endpoints for the AI shopping assistant.
+ * - POST /ai-assistant/chat — non-streaming JSON response (backward compatible)
+ * - POST /ai-assistant/stream — streaming response using Vercel AI SDK data stream protocol
+ */
+@Controller('ai-assistant')
+export class AiAssistantController {
+    private readonly logger = new Logger(AiAssistantController.name);
+
+    constructor(
+        private requestContextService: RequestContextService,
+        private customerService: CustomerService,
+        private sessionService: SessionService,
+        private configService: ConfigService,
+        private aiChatService: AiChatService,
+    ) {}
+
+    /**
+     * Helper: extract user message and conversation history from the request body.
+     * Supports two formats:
+     * 1. Simple: { message: "hello", history: [{role, content}] }
+     * 2. AI SDK: { messages: [UIMessage, ...] } (sent by DefaultChatTransport / useChat())
+     */
+    private extractMessageAndHistory(body: AiChatRequest): {
+        message: string;
+        history: Array<{ role: 'user' | 'assistant'; content: string }>;
+    } {
+        // AI SDK format: messages array with parts
+        if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
+            const msgs = body.messages;
+            const lastUserMsg = [...msgs].reverse().find(m => m.role === 'user');
+            const message = lastUserMsg ? this.getTextFromUIMessage(lastUserMsg) : '';
+
+            const lastUserIndex = msgs.lastIndexOf(lastUserMsg!);
+            const historyMsgs = lastUserIndex > 0 ? msgs.slice(0, lastUserIndex) : [];
+            const history = historyMsgs
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({
+                    role: m.role as 'user' | 'assistant',
+                    content: m.role === 'assistant'
+                        ? this.getAssistantTextWithToolContext(m)
+                        : this.getTextFromUIMessage(m),
+                }))
+                .filter(m => m.content.length > 0);
+
+            return { message: message.trim(), history };
+        }
+
+        // Simple format: { message, history }
+        return {
+            message: (body.message ?? '').trim(),
+            history: (body.history ?? []).map(msg => ({
+                role: msg.role as 'user' | 'assistant',
+                content: msg.content,
+            })),
+        };
+    }
+
+    /** Extract plain text from a UIMessage (handles both parts and content) */
+    private getTextFromUIMessage(msg: Record<string, unknown>): string {
+        if (Array.isArray(msg.parts)) {
+            return (msg.parts as Array<Record<string, unknown>>)
+                .filter(p => p.type === 'text' && typeof p.text === 'string')
+                .map(p => p.text as string)
+                .join('');
+        }
+        if (typeof msg.content === 'string') {
+            return msg.content;
+        }
+        return '';
+    }
+
+    /** Extract assistant text + tool result summaries for conversation context */
+    private getAssistantTextWithToolContext(msg: Record<string, unknown>): string {
+        if (!Array.isArray(msg.parts)) {
+            return typeof msg.content === 'string' ? msg.content : '';
+        }
+        const parts: string[] = [];
+        for (const p of msg.parts as Array<Record<string, unknown>>) {
+            if (p.type === 'text' && typeof p.text === 'string') {
+                parts.push(p.text);
+            }
+            if (typeof p.type === 'string' && p.state === 'output-available' && p.output) {
+                const output = p.output as Record<string, unknown>;
+                if (typeof output.summary === 'string') {
+                    parts.push(`[Tool result: ${output.summary}]`);
+                }
+            }
+        }
+        return parts.join('\n');
+    }
+
+    /**
+     * Helper: extract auth context from request
+     */
+    private async resolveAuthContext(req: Request) {
+        const authHeader = req.get('Authorization');
+        const tokenMatch = authHeader?.trim().match(/^bearer\s(.+)$/i);
+        const sessionToken = tokenMatch?.[1];
+
+        this.logger.log(`[AUTH] Session token present: ${!!sessionToken}`);
+
+        let session;
+        if (sessionToken) {
+            session = await this.sessionService.getSessionFromToken(sessionToken);
+            this.logger.log(`[AUTH] Session found: ${!!session}, userId: ${session?.user?.id ?? 'NONE'}`);
+        }
+
+        const ctx = await this.requestContextService.fromRequest(req, undefined, undefined, session);
+        this.logger.log(`[AUTH] ctx.activeUserId: ${ctx.activeUserId ?? 'NONE'}`);
+
+        let customerId: string | number | undefined;
+        if (ctx.activeUserId) {
+            const customer = await this.customerService.findOneByUserId(ctx, ctx.activeUserId);
+            customerId = customer?.id;
+            this.logger.log(`[AUTH] customerId: ${customerId ?? 'NONE'}`);
+        }
+
+        return { ctx, customerId };
+    }
+
+    /**
+     * Non-streaming endpoint (backward compatible).
+     * Returns the full JSON response after all tool calls complete.
+     */
+    @Post('chat')
+    async chat(@Body() body: AiChatRequest, @Req() req: Request): Promise<AiChatResponse> {
+        const { ctx, customerId } = await this.resolveAuthContext(req);
+        const { message: query, history } = this.extractMessageAndHistory(body);
+
+        if (!query) {
+            return {
+                message: 'Hi! I\'m your shopping assistant. How can I help you today? You can ask me about products, collections, your orders, or anything about our store.',
+                products: [],
+                collections: [],
+            };
+        }
+
+        const result = await this.aiChatService.chat(ctx, query, history, customerId);
+
+        return {
+            message: result.message,
+            products: result.products,
+            collections: result.collections,
+            addToCartAction: result.addToCartAction,
+            orders: result.orders,
+            activeOrder: result.activeOrder,
+            setShippingAddressAction: result.setShippingAddressAction,
+            setBillingAddressAction: result.setBillingAddressAction,
+            setShippingMethodAction: result.setShippingMethodAction,
+        };
+    }
+
+    /**
+     * Streaming endpoint.
+     * Returns a Vercel AI SDK–compatible data stream.
+     * The frontend can consume this with useChat() from @ai-sdk/react.
+     *
+     * Structured data (products, collections, cart, orders, actions) is sent
+     * as data stream annotations (custom JSON messages) alongside the text stream.
+     */
+    @Post('stream')
+    async stream(@Body() body: AiChatRequest, @Req() req: Request, @Res() res: Response): Promise<void> {
+        const { ctx, customerId } = await this.resolveAuthContext(req);
+        const { message: query, history } = this.extractMessageAndHistory(body);
+
+        if (!query) {
+            res.setHeader('Content-Type', 'application/json');
+            res.status(200).json({
+                message: 'Hi! I\'m your shopping assistant. How can I help you today?',
+                products: [],
+                collections: [],
+            });
+            return;
+        }
+
+        const streamResult = this.aiChatService.streamChat(ctx, query, history, customerId);
+
+        // Use the AI SDK's toUIMessageStreamResponse for useChat() compatibility
+        const streamResponse = streamResult.toUIMessageStreamResponse();
+
+        // Forward status and headers
+        res.status(streamResponse.status ?? 200);
+        streamResponse.headers.forEach((value: string, key: string) => {
+            res.setHeader(key, value);
+        });
+
+        // Pipe the body stream to the express response
+        if (streamResponse.body) {
+            const reader = streamResponse.body.getReader();
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    res.write(value);
+                }
+            } catch (e) {
+                this.logger.error(`Stream error: ${e}`);
+            } finally {
+                res.end();
+            }
+        } else {
+            res.end();
+        }
+    }
+}

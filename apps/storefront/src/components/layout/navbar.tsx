@@ -9,8 +9,14 @@ import {Suspense} from "react";
 import {SearchInput} from '@/components/layout/search-input';
 import {NavbarUserSkeleton} from '@/components/shared/skeletons/navbar-user-skeleton';
 import {SearchInputSkeleton} from '@/components/shared/skeletons/search-input-skeleton';
+import {getAuthToken} from '@/lib/auth';
 
-export function Navbar() {
+const VENDURE_BASE_URL = (process.env.VENDURE_SHOP_API_URL || process.env.NEXT_PUBLIC_VENDURE_SHOP_API_URL || '')
+    .replace(/\/shop-api\/?$/, '');
+
+export async function Navbar() {
+    const authToken = await getAuthToken();
+
     return (
         <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background">
             <div className="container mx-auto px-4">
@@ -32,7 +38,7 @@ export function Navbar() {
                             </Suspense>
                         </div>
                         <ThemeSwitcher />
-                        <NavbarChat />
+                        <NavbarChat vendureUrl={VENDURE_BASE_URL} authToken={authToken} />
                         <Suspense>
                             <NavbarCart/>
                         </Suspense>

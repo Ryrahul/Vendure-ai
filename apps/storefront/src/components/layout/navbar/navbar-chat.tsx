@@ -1,25 +1,38 @@
 'use client';
 
-import {useState, Suspense} from 'react';
-import {MessageCircle} from 'lucide-react';
-import {Button} from '@/components/ui/button';
-import {Sheet, SheetTrigger} from '@/components/ui/sheet';
-import {ChatPanel} from '@/components/chat/chat-panel';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
+import { formatPrice } from '@/lib/format';
 
-export function NavbarChat() {
-    const [open, setOpen] = useState(false);
+interface NavbarChatProps {
+    vendureUrl: string;
+    authToken?: string;
+}
+
+export function NavbarChat({ vendureUrl, authToken }: NavbarChatProps) {
+    const router = useRouter();
 
     return (
-        <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" type="button">
-                    <MessageCircle className="h-5 w-5" />
-                    <span className="sr-only">AI Assistant</span>
-                </Button>
-            </SheetTrigger>
-            <Suspense fallback={null}>
-                <ChatPanel onClose={() => setOpen(false)} />
-            </Suspense>
-        </Sheet>
+        <VendureAiChat
+            vendureUrl={vendureUrl}
+            authToken={authToken}
+            formatPrice={formatPrice}
+            onAddToCart={async (variantId, quantity, productName) => {
+                const { addToCart } = await import('@/app/product/[slug]/actions');
+                const result = await addToCart(variantId, quantity);
+                if (result.success) {
+                    toast.success('Added to cart', {
+                        description: `${productName} has been added to your cart`,
+                    });
+                    router.refresh();
+                } else {
+                    toast.error('Error', {
+                        description: result.error || 'Failed to add item to cart',
+                    });
+                }
+            }}
+            onNavigate={(path) => router.push(path)}
+        />
     );
 }

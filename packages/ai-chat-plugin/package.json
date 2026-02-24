@@ -1,0 +1,54 @@
+{
+  "name": "@rahul_vendure/ai-chat-plugin",
+  "version": "0.1.0",
+  "description": "AI-powered shopping assistant plugin for Vendure — LLM chat, vector search, cart management, and order tracking",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "vendure",
+    "vendure-plugin",
+    "ai",
+    "chat",
+    "shopping-assistant",
+    "openai",
+    "llm",
+    "vector-search",
+    "pgvector",
+    "embeddings",
+    "ecommerce"
+  ],
+  "author": "Rahul Yadav",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ryrahul/Vendure-ai.git",
+    "directory": "packages/ai-chat-plugin"
+  },
+  "peerDependencies": {
+    "@vendure/core": ">=3.0.0"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.0",
+    "ai": "^6.0.0",
+    "openai": "^6.0.0",
+    "zod": "^3.0.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@vendure/core": "3.5.4",
+    "typescript": "^5.8.0"
+  }
+}

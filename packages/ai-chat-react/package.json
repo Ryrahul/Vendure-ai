@@ -1,0 +1,70 @@
+{
+  "name": "@rahul_vendure/ai-chat-react",
+  "version": "0.1.0",
+  "description": "Drop-in AI shopping assistant React component for Vendure stores — chat UI with product cards, cart actions, and order tracking",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "keywords": [
+    "vendure",
+    "ai",
+    "chat",
+    "react",
+    "shopping-assistant",
+    "ecommerce",
+    "chatbot",
+    "openai",
+    "vercel-ai-sdk",
+    "tailwindcss"
+  ],
+  "author": "Rahul Yadav",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ryrahul/Vendure-ai.git",
+    "directory": "packages/ai-chat-react"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18",
+    "ai": ">=6.0.0",
+    "@ai-sdk/react": ">=3.0.0",
+    "tailwindcss": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "tailwindcss": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "react-markdown": "^10.0.0",
+    "tailwind-merge": "^3.0.0",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.544.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/react": "^3.0.99",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "ai": "^6.0.97",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.8.0"
+  }
+}
