@@ -11,7 +11,7 @@ import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import 'dotenv/config';
 import path from 'path';
-import { AiAssistantPlugin } from './plugins/ai-assistant-plugin';
+import { AiAssistantPlugin } from '@rahul_vendure/ai-chat-plugin';
 
 const IS_DEV = process.env.APP_ENV === 'dev';
 const serverPort = +process.env.PORT || 3000;
@@ -29,6 +29,14 @@ export const config: VendureConfig = {
             adminApiDebug: true,
             shopApiDebug: true,
         } : {}),
+        cors: IS_DEV
+            ? { origin: true, credentials: true }
+            : {
+                origin: [
+                    process.env.STOREFRONT_ORIGIN || 'https://vendure-ai-storefront.vercel.app',
+                ],
+                credentials: true,
+            },
     },
     authOptions: {
         tokenMethod: ['bearer', 'cookie'],
@@ -45,7 +53,7 @@ export const config: VendureConfig = {
         type: 'postgres',
         // See the README.md "Migrations" section for an explanation of
         // the `synchronize` and `migrations` options.
-        synchronize: true,
+        synchronize: false,
         migrations: [path.join(__dirname, './migrations/*.+(js|ts)')],
         logging: false,
         database: process.env.DB_NAME,
@@ -69,7 +77,7 @@ export const config: VendureConfig = {
             // For local dev, the correct value for assetUrlPrefix should
             // be guessed correctly, but for production it will usually need
             // to be set manually to match your production url.
-            assetUrlPrefix: IS_DEV ? undefined : 'http://3.110.193.232:3000/assets/',
+            assetUrlPrefix: IS_DEV ? undefined : process.env.ASSET_URL_PREFIX,
         }),
         DefaultSchedulerPlugin.init(),
         DefaultJobQueuePlugin.init({ useDatabaseForBuffer: true }),
@@ -78,7 +86,7 @@ export const config: VendureConfig = {
             openaiApiKey: process.env.OPENAI_API_KEY ?? '',
             embeddingModel: 'text-embedding-3-small',
             // todo: add env bata paxi
-            assetBaseUrl: IS_DEV ? undefined : 'http://3.110.193.232:3000/assets/',
+            assetBaseUrl: IS_DEV ? undefined : process.env.ASSET_URL_PREFIX,
         }),
         EmailPlugin.init({
             devMode: true,

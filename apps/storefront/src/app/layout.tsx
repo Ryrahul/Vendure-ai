@@ -1,6 +1,7 @@
 import type {Metadata, Viewport} from "next";
 import {Geist, Geist_Mono} from "next/font/google";
 import "./globals.css";
+import {Suspense} from "react";
 import {Toaster} from "@/components/ui/sonner";
 import {Navbar} from "@/components/layout/navbar";
 import {Footer} from "@/components/layout/footer";
@@ -63,7 +64,9 @@ export default function RootLayout({children}: LayoutProps<'/'>) {
                 className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}
             >
                 <ThemeProvider>
-                    <Navbar />
+                    <Suspense>
+                        <Navbar />
+                    </Suspense>
                     {children}
                     <Footer />
                     <Toaster />

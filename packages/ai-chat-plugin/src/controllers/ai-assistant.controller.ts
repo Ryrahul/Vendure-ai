@@ -27,9 +27,17 @@ export type {
 } from '../services/ai-chat.service';
 
 export interface AiChatRequest {
-    message: string;
-    /** Conversation history from the frontend for multi-turn context */
+    /** Direct message (simple format) */
+    message?: string;
+    /** Conversation history from the frontend for multi-turn context (simple format) */
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    /** AI SDK UIMessage array (sent by DefaultChatTransport / useChat()) */
+    messages?: Array<{
+        role: string;
+        content?: string;
+        parts?: Array<{ type: string; text?: string; [key: string]: unknown }>;
+        [key: string]: unknown;
+    }>;
 }
 
 export interface AiChatResponse {
@@ -60,6 +68,81 @@ export class AiAssistantController {
         private configService: ConfigService,
         private aiChatService: AiChatService,
     ) {}
+
+    /**
+     * Helper: extract user message and conversation history from the request body.
+     * Supports two formats:
+     * 1. Simple: { message: "hello", history: [{role, content}] }
+     * 2. AI SDK: { messages: [UIMessage, ...] } (sent by DefaultChatTransport / useChat())
+     */
+    private extractMessageAndHistory(body: AiChatRequest): {
+        message: string;
+        history: Array<{ role: 'user' | 'assistant'; content: string }>;
+    } {
+        // AI SDK format: messages array with parts
+        if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
+            const msgs = body.messages;
+            const lastUserMsg = [...msgs].reverse().find(m => m.role === 'user');
+            const message = lastUserMsg ? this.getTextFromUIMessage(lastUserMsg) : '';
+
+            const lastUserIndex = msgs.lastIndexOf(lastUserMsg!);
+            const historyMsgs = lastUserIndex > 0 ? msgs.slice(0, lastUserIndex) : [];
+            const history = historyMsgs
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({
+                    role: m.role as 'user' | 'assistant',
+                    content: m.role === 'assistant'
+                        ? this.getAssistantTextWithToolContext(m)
+                        : this.getTextFromUIMessage(m),
+                }))
+                .filter(m => m.content.length > 0);
+
+            return { message: message.trim(), history };
+        }
+
+        // Simple format: { message, history }
+        return {
+            message: (body.message ?? '').trim(),
+            history: (body.history ?? []).map(msg => ({
+                role: msg.role as 'user' | 'assistant',
+                content: msg.content,
+            })),
+        };
+    }
+
+    /** Extract plain text from a UIMessage (handles both parts and content) */
+    private getTextFromUIMessage(msg: Record<string, unknown>): string {
+        if (Array.isArray(msg.parts)) {
+            return (msg.parts as Array<Record<string, unknown>>)
+                .filter(p => p.type === 'text' && typeof p.text === 'string')
+                .map(p => p.text as string)
+                .join('');
+        }
+        if (typeof msg.content === 'string') {
+            return msg.content;
+        }
+        return '';
+    }
+
+    /** Extract assistant text + tool result summaries for conversation context */
+    private getAssistantTextWithToolContext(msg: Record<string, unknown>): string {
+        if (!Array.isArray(msg.parts)) {
+            return typeof msg.content === 'string' ? msg.content : '';
+        }
+        const parts: string[] = [];
+        for (const p of msg.parts as Array<Record<string, unknown>>) {
+            if (p.type === 'text' && typeof p.text === 'string') {
+                parts.push(p.text);
+            }
+            if (typeof p.type === 'string' && p.state === 'output-available' && p.output) {
+                const output = p.output as Record<string, unknown>;
+                if (typeof output.summary === 'string') {
+                    parts.push(`[Tool result: ${output.summary}]`);
+                }
+            }
+        }
+        return parts.join('\n');
+    }
 
     /**
      * Helper: extract auth context from request
@@ -97,8 +180,8 @@ export class AiAssistantController {
     @Post('chat')
     async chat(@Body() body: AiChatRequest, @Req() req: Request): Promise<AiChatResponse> {
         const { ctx, customerId } = await this.resolveAuthContext(req);
+        const { message: query, history } = this.extractMessageAndHistory(body);
 
-        const query = (body?.message ?? '').trim();
         if (!query) {
             return {
                 message: 'Hi! I\'m your shopping assistant. How can I help you today? You can ask me about products, collections, your orders, or anything about our store.',
@@ -106,11 +189,6 @@ export class AiAssistantController {
                 collections: [],
             };
         }
-
-        const history = (body.history ?? []).map(msg => ({
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content,
-        }));
 
         const result = await this.aiChatService.chat(ctx, query, history, customerId);
 
@@ -138,8 +216,8 @@ export class AiAssistantController {
     @Post('stream')
     async stream(@Body() body: AiChatRequest, @Req() req: Request, @Res() res: Response): Promise<void> {
         const { ctx, customerId } = await this.resolveAuthContext(req);
+        const { message: query, history } = this.extractMessageAndHistory(body);
 
-        const query = (body?.message ?? '').trim();
         if (!query) {
             res.setHeader('Content-Type', 'application/json');
             res.status(200).json({
@@ -149,11 +227,6 @@ export class AiAssistantController {
             });
             return;
         }
-
-        const history = (body.history ?? []).map(msg => ({
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content,
-        }));
 
         const streamResult = this.aiChatService.streamChat(ctx, query, history, customerId);
 

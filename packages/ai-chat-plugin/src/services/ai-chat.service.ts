@@ -408,7 +408,7 @@ export class AiChatService implements OnModuleInit {
         userMessage: string,
         conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
         customerId?: string | number,
-    ) {
+    ): ReturnType<typeof streamText> {
         const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
             { role: 'system', content: SYSTEM_PROMPT },
             ...conversationHistory,
