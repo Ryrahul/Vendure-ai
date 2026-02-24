@@ -12,7 +12,6 @@ import { ProductEmbeddingHandler } from './handlers/product-embedding-handler';
 import { VariantEmbeddingHandler } from './handlers/variant-embedding-handler';
 import { CollectionEmbeddingHandler } from './handlers/collection-embedding-handler';
 import { EmbedAllJobService } from './services/embed-all-job.service';
-import { EmbeddingSchemaService } from './services/embedding-schema.service';
 import { AiAssistantResolver } from './api/ai-assistant.resolver';
 import { AiAssistantController } from './controllers/ai-assistant.controller';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from './constants';
@@ -42,7 +41,6 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel'>>
         ProductEmbeddingHandler,
         VariantEmbeddingHandler,
         CollectionEmbeddingHandler,
-        EmbeddingSchemaService,
         EmbedAllJobService,
     ],
     compatibility: '^3.0.0',
