@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/server/**'
+      - 'packages/ai-chat-plugin/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/deploy-backend.yml'
@@ -27,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build ai-chat-plugin
+        run: npm run build -w @rahul_vendure/ai-chat-plugin
+
       - name: Build backend
         run: npm run build -w server
 
@@ -39,6 +43,8 @@ jobs:
             apps/server/dist \
             apps/server/static/email/templates \
             apps/server/package.json \
+            packages/ai-chat-plugin/dist \
+            packages/ai-chat-plugin/package.json \
             package.json \
             package-lock.json
 

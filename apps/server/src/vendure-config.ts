@@ -29,6 +29,14 @@ export const config: VendureConfig = {
             adminApiDebug: true,
             shopApiDebug: true,
         } : {}),
+        cors: IS_DEV
+            ? { origin: true, credentials: true }
+            : {
+                origin: [
+                    process.env.STOREFRONT_ORIGIN || 'https://vendure-ai-storefront.vercel.app',
+                ],
+                credentials: true,
+            },
     },
     authOptions: {
         tokenMethod: ['bearer', 'cookie'],
