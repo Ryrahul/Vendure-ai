@@ -76,6 +76,8 @@ export interface VendureAiChatProps {
     // Callbacks
     /** Called when a product should be added to cart */
     onAddToCart?: (variantId: string, quantity: number, productName: string) => void | Promise<void>;
+    /** Called when the AI modifies cart state (add, adjust quantity, checkout actions) */
+    onCartUpdate?: (order: ChatActiveOrder) => void;
     /** Called when user clicks a link (product, collection) */
     onNavigate?: (path: string) => void;
 

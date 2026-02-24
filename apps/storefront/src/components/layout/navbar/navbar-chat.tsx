@@ -18,6 +18,7 @@ export function NavbarChat({ vendureUrl, authToken }: NavbarChatProps) {
             vendureUrl={vendureUrl}
             authToken={authToken}
             formatPrice={formatPrice}
+            onCartUpdate={() => router.refresh()}
             onAddToCart={async (variantId, quantity, productName) => {
                 const { addToCart } = await import('@/app/product/[slug]/actions');
                 const result = await addToCart(variantId, quantity);

@@ -32,6 +32,7 @@ export function VendureAiChat({
     welcomeMessage = DEFAULT_WELCOME,
     quickActions = DEFAULT_QUICK_ACTIONS,
     onAddToCart,
+    onCartUpdate,
     onNavigate,
     renderProduct,
     renderCollection,
@@ -63,6 +64,13 @@ export function VendureAiChat({
         if (!lastAssistantMsg) return;
 
         const data = extractDataFromMessage(lastAssistantMsg);
+
+        // Notify when cart state changes (add, adjust, checkout)
+        if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(lastAssistantMsg.id + '-cartupdate')) {
+            processedActionsRef.current.add(lastAssistantMsg.id + '-cartupdate');
+            onCartUpdate(data.activeOrder);
+        }
+
         if (data.addToCartAction && !processedActionsRef.current.has(lastAssistantMsg.id + '-cart')) {
             processedActionsRef.current.add(lastAssistantMsg.id + '-cart');
             handleAddToCartAction(
