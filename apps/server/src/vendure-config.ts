@@ -16,6 +16,13 @@ import { AiAssistantPlugin } from '@rahul_vendure/ai-chat-plugin';
 const IS_DEV = process.env.APP_ENV === 'dev';
 const serverPort = +process.env.PORT || 3000;
 
+/** Ensure asset URL has trailing slash so GraphQL preview/source URLs are built correctly.  */
+// todo: ai ma ni sidhai full url backend batai send
+function normalizeAssetUrlPrefix(prefix: string | undefined): string | undefined {
+    if (prefix == null || prefix === '') return prefix;
+    return prefix.endsWith('/') ? prefix : `${prefix}/`;
+}
+
 export const config: VendureConfig = {
     apiOptions: {
         port: serverPort,
@@ -79,7 +86,7 @@ export const config: VendureConfig = {
             // For local dev, the correct value for assetUrlPrefix should
             // be guessed correctly, but for production it will usually need
             // to be set manually to match your production url.
-            assetUrlPrefix: IS_DEV ? undefined : process.env.ASSET_URL_PREFIX,
+            assetUrlPrefix: IS_DEV ? undefined : normalizeAssetUrlPrefix(process.env.ASSET_URL_PREFIX),
         }),
         DefaultSchedulerPlugin.init(),
         DefaultJobQueuePlugin.init({ useDatabaseForBuffer: true }),
@@ -88,7 +95,7 @@ export const config: VendureConfig = {
             openaiApiKey: process.env.OPENAI_API_KEY ?? '',
             embeddingModel: 'text-embedding-3-small',
             // todo: add env bata paxi
-            assetBaseUrl: IS_DEV ? undefined : process.env.ASSET_URL_PREFIX,
+            assetBaseUrl: IS_DEV ? undefined : normalizeAssetUrlPrefix(process.env.ASSET_URL_PREFIX),
         }),
         EmailPlugin.init({
             devMode: true,
