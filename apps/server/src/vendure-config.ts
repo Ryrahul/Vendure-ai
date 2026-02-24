@@ -69,7 +69,7 @@ export const config: VendureConfig = {
             // For local dev, the correct value for assetUrlPrefix should
             // be guessed correctly, but for production it will usually need
             // to be set manually to match your production url.
-            assetUrlPrefix: IS_DEV ? undefined : 'http://3.110.193.232:3000/assets/',
+            assetUrlPrefix: IS_DEV ? undefined : process.env.ASSET_URL_PREFIX,
         }),
         DefaultSchedulerPlugin.init(),
         DefaultJobQueuePlugin.init({ useDatabaseForBuffer: true }),
@@ -78,7 +78,7 @@ export const config: VendureConfig = {
             openaiApiKey: process.env.OPENAI_API_KEY ?? '',
             embeddingModel: 'text-embedding-3-small',
             // todo: add env bata paxi
-            assetBaseUrl: IS_DEV ? undefined : 'http://3.110.193.232:3000/assets/',
+            assetBaseUrl: IS_DEV ? undefined : process.env.ASSET_URL_PREFIX,
         }),
         EmailPlugin.init({
             devMode: true,
