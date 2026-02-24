@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
             },
             {
                 hostname: '3.110.193.232'
+            },
+            {
+                hostname: 'ai-vendure.hyperce.io'
             }
         ],
     },
