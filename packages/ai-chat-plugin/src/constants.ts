@@ -11,6 +11,15 @@ export const MAX_CHAT_PRODUCTS = 5;
 /** Max number of Vendure collections to return in chat (e.g. "electronics", "sports"). */
 export const MAX_CHAT_COLLECTIONS = 3;
 
+/**
+ * Format a price in the smallest currency unit (cents) to a human-readable dollar string.
+ * Used in tool result summaries so the LLM sees formatted prices (e.g. "$42.63")
+ * instead of raw cent values that it might misinterpret.
+ */
+export function formatPrice(cents: number): string {
+    return `$${(cents / 100).toFixed(2)}`;
+}
+
 export interface AiAssistantPluginOptions {
     openaiApiKey: string;
     embeddingModel?: string;

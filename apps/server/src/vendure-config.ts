@@ -41,6 +41,7 @@ export const config: VendureConfig = {
             : {
                 origin: [
                     process.env.STOREFRONT_ORIGIN || 'https://vendure-ai-storefront.vercel.app',
+                    'http://localhost:3001',
                 ],
                 credentials: true,
                 methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
