@@ -4,7 +4,7 @@ import { EmbeddingService } from '../embedding.service';
 import { ProductEmbeddingService } from '../product-embedding.service';
 import { CollectionEmbeddingService } from '../collection-embedding.service';
 import { ChatResultMapper } from '../chat-result-mapper';
-import { MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE } from '../../constants';
+import { MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE, formatPrice } from '../../constants';
 import type { AiChatProduct, ToolResult } from '../types';
 
 export class SearchTools {
@@ -79,7 +79,7 @@ export class SearchTools {
             products: mapped,
             collections: [],
             summary: mapped.length > 0
-                ? `Found ${mapped.length} product(s) matching "${query}". The products with their variantIds are: ${mapped.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${p.price})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
+                ? `Found ${mapped.length} product(s) matching "${query}". The products with their variantIds are: ${mapped.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price)})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
                 : `No products found matching "${query}".`,
         };
     }
@@ -126,7 +126,7 @@ export class SearchTools {
             products,
             collections,
             summary: products.length > 0
-                ? `Found ${products.length} product(s) related to "${query}". The products with their variantIds are: ${products.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${p.price})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
+                ? `Found ${products.length} product(s) related to "${query}". The products with their variantIds are: ${products.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price)})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
                 : `No products found related to "${query}".`,
         };
     }
@@ -245,14 +245,14 @@ export class SearchTools {
         }
 
         const priceDesc = minPrice != null && maxPrice != null
-            ? `between ${minPrice} and ${maxPrice}`
-            : minPrice != null ? `above ${minPrice}` : maxPrice != null ? `under ${maxPrice}` : '';
+            ? `between ${formatPrice(minPrice)} and ${formatPrice(maxPrice)}`
+            : minPrice != null ? `above ${formatPrice(minPrice)}` : maxPrice != null ? `under ${formatPrice(maxPrice)}` : '';
 
         return {
             products: mapped,
             collections: [],
             summary: mapped.length > 0
-                ? `Found ${mapped.length} product(s) ${priceDesc}${query ? ` matching "${query}"` : ''}. The products with their variantIds are: ${mapped.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${p.price})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
+                ? `Found ${mapped.length} product(s) ${priceDesc}${query ? ` matching "${query}"` : ''}. The products with their variantIds are: ${mapped.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price)})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
                 : `No products found ${priceDesc}${query ? ` matching "${query}"` : ''}.`,
         };
     }

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_CHAT_COLLECTIONS = exports.MAX_CHAT_PRODUCTS = exports.FALLBACK_MIN_SCORE = exports.SIMILARITY_THRESHOLD = exports.EMBED_ALL_QUEUE_NAME = exports.EMBEDDING_DIMENSIONS = exports.AI_ASSISTANT_OPTIONS = void 0;
+exports.formatPrice = formatPrice;
 exports.AI_ASSISTANT_OPTIONS = Symbol('AI_ASSISTANT_OPTIONS');
 exports.EMBEDDING_DIMENSIONS = 1536; // text-embedding-3-small
 exports.EMBED_ALL_QUEUE_NAME = 'embed-all';
@@ -12,4 +13,12 @@ exports.FALLBACK_MIN_SCORE = 0.25;
 exports.MAX_CHAT_PRODUCTS = 5;
 /** Max number of Vendure collections to return in chat (e.g. "electronics", "sports"). */
 exports.MAX_CHAT_COLLECTIONS = 3;
+/**
+ * Format a price in the smallest currency unit (cents) to a human-readable dollar string.
+ * Used in tool result summaries so the LLM sees formatted prices (e.g. "$42.63")
+ * instead of raw cent values that it might misinterpret.
+ */
+function formatPrice(cents) {
+    return `$${(cents / 100).toFixed(2)}`;
+}
 //# sourceMappingURL=constants.js.map

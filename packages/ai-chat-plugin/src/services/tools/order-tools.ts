@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, Order } from '@vendure/core';
 import { ChatResultMapper } from '../chat-result-mapper';
+import { formatPrice } from '../../constants';
 import type { ToolResult } from '../types';
 
 export class OrderTools {
@@ -45,7 +46,7 @@ export class OrderTools {
                 collections: [],
                 orders: mapped,
                 summary: mapped.length > 0
-                    ? `Found ${mapped.length} order(s). ${mapped.map(o => `Order ${o.code}: ${o.state}, total ${o.total}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
+                    ? `Found ${mapped.length} order(s). ${mapped.map(o => `Order ${o.code}: ${o.state}, total ${formatPrice(o.total)}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
                     : 'No past orders found.',
             };
         } catch (e) {
@@ -102,7 +103,7 @@ export class OrderTools {
                 products: [],
                 collections: [],
                 orders: mapped,
-                summary: `Order ${o.code}: State: ${o.state}, Total: ${o.total}, Placed: ${o.orderPlacedAt ?? 'N/A'}. Fulfillment: ${fulfillmentInfo}. Items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`,
+                summary: `Order ${o.code}: State: ${o.state}, Total: ${formatPrice(o.total)}, Placed: ${o.orderPlacedAt ?? 'N/A'}. Fulfillment: ${fulfillmentInfo}. Items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`,
             };
         } catch (e) {
             this.logger.error(`Error tracking order: ${e}`);

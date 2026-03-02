@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, ProductVariant, OrderService, Order, isGraphQlErrorResult } from '@vendure/core';
 import { ChatResultMapper } from '../chat-result-mapper';
+import { formatPrice } from '../../constants';
 import type { AiChatProduct, AiChatCollection, AiActiveOrder, AddToCartAction, ToolResult } from '../types';
 
 export class CartTools {
@@ -112,14 +113,14 @@ export class CartTools {
             const activeOrder = this.mapper.mapActiveOrder(fullOrder);
 
             const linesSummary = activeOrder.lines
-                .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId}, variantId: ${l.variantId}, linePrice: ${l.linePriceWithTax})`)
+                .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId}, variantId: ${l.variantId}, linePrice: ${formatPrice(l.linePriceWithTax)})`)
                 .join(', ');
 
             return {
                 products: [],
                 collections: [],
                 activeOrder,
-                summary: `Cart has ${activeOrder.totalQuantity} item(s), total: ${activeOrder.totalWithTax}. Lines: ${linesSummary}. Use the orderLineId when adjusting quantities.`,
+                summary: `Cart has ${activeOrder.totalQuantity} item(s), total: ${formatPrice(activeOrder.totalWithTax)}. Lines: ${linesSummary}. Use the orderLineId when adjusting quantities.`,
             };
         } catch (e) {
             this.logger.error(`Error fetching active order: ${e}`);
@@ -191,7 +192,7 @@ export class CartTools {
                 products: [],
                 collections: [],
                 activeOrder,
-                summary: `Item ${action}. Cart now has ${activeOrder.totalQuantity} item(s), total: ${activeOrder.totalWithTax}. Lines: ${linesSummary}`,
+                summary: `Item ${action}. Cart now has ${activeOrder.totalQuantity} item(s), total: ${formatPrice(activeOrder.totalWithTax)}. Lines: ${linesSummary}`,
             };
         } catch (e) {
             this.logger.error(`Error adjusting order line: ${e}`);

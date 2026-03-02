@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, OrderService, Order, isGraphQlErrorResult } from '@vendure/core';
+import { formatPrice } from '../../constants';
 import type { ToolResult, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction } from '../types';
 
 export class CheckoutTools {
@@ -62,7 +63,7 @@ export class CheckoutTools {
                 products: [],
                 collections: [],
                 summary: mapped.length > 0
-                    ? `Available shipping methods: ${mapped.map(m => `"${m.name}" (id: ${m.id}, price: ${m.priceWithTax}, code: ${m.code})`).join(', ')}`
+                    ? `Available shipping methods: ${mapped.map(m => `"${m.name}" (id: ${m.id}, price: ${formatPrice(m.priceWithTax)}, code: ${m.code})`).join(', ')}`
                     : 'No shipping methods available. Make sure a shipping address is set first.',
             };
         } catch (e) {
@@ -197,7 +198,7 @@ export class CheckoutTools {
             return {
                 products: [],
                 collections: [],
-                summary: `Shipping method set successfully. Shipping cost: ${shippingCost}. Order total: ${(updatedOrder as any).totalWithTax ?? 0}.`,
+                summary: `Shipping method set successfully. Shipping cost: ${formatPrice(shippingCost)}. Order total: ${formatPrice((updatedOrder as any).totalWithTax ?? 0)}.`,
                 setShippingMethodAction: { shippingMethodId: params.shippingMethodId },
             };
         } catch (e) {
