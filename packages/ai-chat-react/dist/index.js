@@ -33,6 +33,7 @@ __export(index_exports, {
   CartSummary: () => CartSummary,
   ChatMessage: () => ChatMessage,
   CollectionBadge: () => CollectionBadge,
+  OrderCard: () => OrderCard,
   ProductCard: () => ProductCard,
   VendureAiChat: () => VendureAiChat,
   cn: () => cn,
@@ -44,7 +45,7 @@ module.exports = __toCommonJS(index_exports);
 
 // src/components/VendureAiChat.tsx
 var import_react4 = require("react");
-var import_lucide_react3 = require("lucide-react");
+var import_lucide_react4 = require("lucide-react");
 
 // src/hooks/use-vendure-chat.ts
 var import_react = require("react");
@@ -75,6 +76,9 @@ function extractToolOutput(p, data) {
   }
   if (result.activeOrder) {
     data.activeOrder = result.activeOrder;
+  }
+  if (Array.isArray(result.orders) && result.orders.length > 0) {
+    data.orders = result.orders;
   }
 }
 function extractDataFromMessage(message) {
@@ -249,25 +253,124 @@ function CartSummary({ order, formatPrice, className }) {
   ] });
 }
 
-// src/components/ChatMessage.tsx
+// src/components/OrderCard.tsx
+var import_lucide_react3 = require("lucide-react");
 var import_jsx_runtime4 = require("react/jsx-runtime");
+function getStateLabel(state) {
+  var _a;
+  const map = {
+    ArrangingPayment: "Awaiting Payment",
+    PaymentAuthorized: "Payment Authorized",
+    PaymentSettled: "Payment Settled",
+    PartiallyShipped: "Partially Shipped",
+    Shipped: "Shipped",
+    PartiallyDelivered: "Partially Delivered",
+    Delivered: "Delivered",
+    Cancelled: "Cancelled"
+  };
+  return (_a = map[state]) != null ? _a : state;
+}
+function getStateBadgeClass(state) {
+  if (state === "Delivered") return "bg-green-100 text-green-800";
+  if (state === "Shipped" || state === "PartiallyShipped") return "bg-blue-100 text-blue-800";
+  if (state === "Cancelled") return "bg-red-100 text-red-800";
+  return "bg-muted text-muted-foreground";
+}
+function OrderCard({ order, onNavigate, formatPrice, className }) {
+  const placedDate = order.orderPlacedAt ? new Date(order.orderPlacedAt).toLocaleDateString(void 0, { year: "numeric", month: "short", day: "numeric" }) : null;
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: cn("rounded-md border bg-background p-3 space-y-2", className), children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "flex items-center justify-between", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "flex items-center gap-1.5 text-xs font-medium text-muted-foreground", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_lucide_react3.Package, { className: "h-3 w-3" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { children: [
+          "Order ",
+          order.code
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", getStateBadgeClass(order.state)), children: getStateLabel(order.state) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [
+      placedDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: placedDate }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "font-semibold text-foreground", children: formatPrice(order.total) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "space-y-1.5", children: order.lines.map((line, idx) => {
+      const handleClick = (e) => {
+        if (onNavigate && line.slug) {
+          e.preventDefault();
+          onNavigate(`/product/${line.slug}`);
+        }
+      };
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "a",
+          {
+            href: line.slug ? `/product/${line.slug}` : "#",
+            onClick: handleClick,
+            className: "relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted",
+            children: line.image ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "img",
+              {
+                src: line.image,
+                alt: line.productName,
+                className: "h-full w-full object-cover",
+                loading: "lazy"
+              }
+            ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "text-muted-foreground text-[9px] flex items-center justify-center h-full", children: "No img" })
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "min-w-0 flex-1", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "a",
+            {
+              href: line.slug ? `/product/${line.slug}` : "#",
+              onClick: handleClick,
+              className: "block",
+              children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "text-sm line-clamp-1 hover:underline", children: line.productName })
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { className: "text-xs text-muted-foreground", children: [
+            "Qty: ",
+            line.quantity,
+            " \xB7 ",
+            formatPrice(line.linePriceWithTax)
+          ] })
+        ] })
+      ] }, idx);
+    }) }),
+    order.fulfillments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "border-t pt-1.5 space-y-0.5", children: order.fulfillments.map((f, idx) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { className: "text-xs text-muted-foreground", children: [
+      f.method,
+      ": ",
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "font-medium", children: f.state }),
+      f.trackingCode && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { className: "ml-1", children: [
+        "(Tracking: ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "font-mono", children: f.trackingCode }),
+        ")"
+      ] })
+    ] }, idx)) })
+  ] });
+}
+
+// src/components/ChatMessage.tsx
+var import_jsx_runtime5 = require("react/jsx-runtime");
 function ChatMessage({
   message,
   onNavigate,
   renderProduct,
   renderCollection,
   renderCartSummary,
+  renderOrder,
   formatPrice,
   addingToCart,
   onAddToCartClick
 }) {
+  var _a;
   const text = getMessageText(message);
   const data = message.role === "assistant" ? extractDataFromMessage(message) : null;
-  if (message.role === "assistant" && !text && !(data == null ? void 0 : data.products.length) && !(data == null ? void 0 : data.collections.length) && !(data == null ? void 0 : data.activeOrder)) {
+  if (message.role === "assistant" && !text && !(data == null ? void 0 : data.products.length) && !(data == null ? void 0 : data.collections.length) && !(data == null ? void 0 : data.activeOrder) && !((_a = data == null ? void 0 : data.orders) == null ? void 0 : _a.length)) {
     return null;
   }
   const isUser = message.role === "user";
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: cn("flex", isUser ? "justify-end" : "justify-start"), children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: cn("flex", isUser ? "justify-end" : "justify-start"), children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
     "div",
     {
       className: cn(
@@ -275,13 +378,24 @@ function ChatMessage({
         isUser ? "bg-primary text-primary-foreground" : "bg-muted"
       ),
       children: [
-        message.role === "assistant" && text ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_react_markdown.default, { children: text }) }) : message.role === "user" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "whitespace-pre-wrap", children: text }) : null,
-        data && data.collections.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "mt-2 flex flex-wrap gap-1.5", children: data.collections.map(
-          (c) => renderCollection ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_react3.default.Fragment, { children: renderCollection(c) }, c.id) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CollectionBadge, { collection: c, onNavigate }, c.id)
+        message.role === "assistant" && text ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_react_markdown.default, { children: text }) }) : message.role === "user" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "whitespace-pre-wrap", children: text }) : null,
+        data && data.collections.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "mt-2 flex flex-wrap gap-1.5", children: data.collections.map(
+          (c) => renderCollection ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_react3.default.Fragment, { children: renderCollection(c) }, c.id) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CollectionBadge, { collection: c, onNavigate }, c.id)
         ) }),
-        (data == null ? void 0 : data.activeOrder) && data.activeOrder.lines.length > 0 && (renderCartSummary ? renderCartSummary(data.activeOrder) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CartSummary, { order: data.activeOrder, formatPrice })),
-        data && data.products.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "mt-3 space-y-2", children: data.products.map(
-          (p) => renderProduct ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_react3.default.Fragment, { children: renderProduct(p) }, p.id) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        (data == null ? void 0 : data.activeOrder) && data.activeOrder.lines.length > 0 && (renderCartSummary ? renderCartSummary(data.activeOrder) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CartSummary, { order: data.activeOrder, formatPrice })),
+        (data == null ? void 0 : data.orders) && data.orders.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "mt-3 space-y-2", children: data.orders.map(
+          (order) => renderOrder ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_react3.default.Fragment, { children: renderOrder(order) }, order.id) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            OrderCard,
+            {
+              order,
+              onNavigate,
+              formatPrice
+            },
+            order.id
+          )
+        ) }),
+        data && data.products.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "mt-3 space-y-2", children: data.products.map(
+          (p) => renderProduct ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_react3.default.Fragment, { children: renderProduct(p) }, p.id) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             ProductCard,
             {
               product: p,
@@ -299,7 +413,7 @@ function ChatMessage({
 }
 
 // src/components/VendureAiChat.tsx
-var import_jsx_runtime5 = require("react/jsx-runtime");
+var import_jsx_runtime6 = require("react/jsx-runtime");
 var DEFAULT_QUICK_ACTIONS = [
   "What do you sell?",
   "Show me your collections",
@@ -322,6 +436,7 @@ function VendureAiChat({
   renderProduct,
   renderCollection,
   renderCartSummary,
+  renderOrder,
   className,
   formatPrice = defaultFormatPrice
 }) {
@@ -342,20 +457,21 @@ function VendureAiChat({
   (0, import_react4.useEffect)(() => {
     var _a;
     if (status !== "ready") return;
-    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
-    if (!lastAssistantMsg) return;
-    const data = extractDataFromMessage(lastAssistantMsg);
-    if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(lastAssistantMsg.id + "-cartupdate")) {
-      processedActionsRef.current.add(lastAssistantMsg.id + "-cartupdate");
-      onCartUpdate(data.activeOrder);
-    }
-    if (data.addToCartAction && !processedActionsRef.current.has(lastAssistantMsg.id + "-cart")) {
-      processedActionsRef.current.add(lastAssistantMsg.id + "-cart");
-      handleAddToCartAction(
-        data.addToCartAction.variantId,
-        (_a = data.addToCartAction.productName) != null ? _a : "Item",
-        data.addToCartAction.quantity
-      );
+    for (const msg of messages) {
+      if (msg.role !== "assistant") continue;
+      const data = extractDataFromMessage(msg);
+      if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(msg.id + "-cartupdate")) {
+        processedActionsRef.current.add(msg.id + "-cartupdate");
+        onCartUpdate(data.activeOrder);
+      }
+      if (data.addToCartAction && !processedActionsRef.current.has(msg.id + "-cart")) {
+        processedActionsRef.current.add(msg.id + "-cart");
+        handleAddToCartAction(
+          data.addToCartAction.variantId,
+          (_a = data.addToCartAction.productName) != null ? _a : "Item",
+          data.addToCartAction.quantity
+        );
+      }
     }
   }, [messages, status]);
   async function handleAddToCartAction(variantId, productName, quantity = 1) {
@@ -389,9 +505,9 @@ function VendureAiChat({
   }
   const isInline = position === "inline";
   if (isInline) {
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: cn("flex h-full w-full flex-col overflow-hidden rounded-lg border bg-background", className), children: renderPanel() });
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: cn("flex h-full w-full flex-col overflow-hidden rounded-lg border bg-background", className), children: renderPanel() });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
     "div",
     {
       className: cn(
@@ -400,9 +516,9 @@ function VendureAiChat({
         className
       ),
       children: [
-        isOpen && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "fixed inset-0 z-[-1]", onClick: () => setIsOpen(false) }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        isOpen && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "fixed inset-0 z-[-1]", onClick: () => setIsOpen(false) }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
             "div",
             {
               className: cn(
@@ -413,53 +529,53 @@ function VendureAiChat({
             }
           )
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             onClick: () => setIsOpen(!isOpen),
             className: "flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 hover:bg-primary/90",
             "aria-label": isOpen ? "Close chat" : "Open chat",
-            children: isOpen ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.X, { className: "h-6 w-6" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.MessageCircle, { className: "h-6 w-6" })
+            children: isOpen ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.X, { className: "h-6 w-6" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.MessageCircle, { className: "h-6 w-6" })
           }
         )
       ]
     }
   );
   function renderPanel() {
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex shrink-0 items-center justify-between border-b p-4", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("h2", { className: "flex items-center gap-2 text-left font-semibold", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.Store, { className: "h-5 w-5 text-primary" }),
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "flex shrink-0 items-center justify-between border-b p-4", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("h2", { className: "flex items-center gap-2 text-left font-semibold", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.Store, { className: "h-5 w-5 text-primary" }),
           title
         ] }),
-        !isInline && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        !isInline && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             onClick: () => setIsOpen(false),
             className: "flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
             "aria-label": "Close",
-            children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.X, { className: "h-4 w-4" })
+            children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.X, { className: "h-4 w-4" })
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "min-h-0 flex-1 overflow-y-auto p-4", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "space-y-4", children: [
-        messages.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "space-y-4 py-4", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex justify-start", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { children: welcomeMessage }) }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex flex-wrap gap-2", children: quickActions.map((action) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "min-h-0 flex-1 overflow-y-auto p-4", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "space-y-4", children: [
+        messages.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "space-y-4 py-4", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "flex justify-start", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: welcomeMessage }) }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "flex flex-wrap gap-2", children: quickActions.map((action) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               onClick: () => handleSend(action),
               disabled: isLoading,
               className: "inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50",
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.Sparkles, { className: "h-3 w-3 text-primary" }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.Sparkles, { className: "h-3 w-3 text-primary" }),
                 action
               ]
             },
             action
           )) })
         ] }),
-        messages.map((msg) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        messages.map((msg) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           ChatMessage,
           {
             message: msg,
@@ -467,20 +583,21 @@ function VendureAiChat({
             renderProduct,
             renderCollection,
             renderCartSummary,
+            renderOrder,
             formatPrice,
             addingToCart,
             onAddToCartClick: handleAddToCartClick
           },
           msg.id
         )),
-        isLoading && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "flex justify-start", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "flex items-center gap-2 rounded-lg bg-muted px-3 py-2", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.Loader2, { className: "h-4 w-4 animate-spin text-muted-foreground" }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "text-xs text-muted-foreground", children: status === "streaming" ? "Responding..." : "Thinking..." })
+        isLoading && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "flex justify-start", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "flex items-center gap-2 rounded-lg bg-muted px-3 py-2", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.Loader2, { className: "h-4 w-4 animate-spin text-muted-foreground" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "text-xs text-muted-foreground", children: status === "streaming" ? "Responding..." : "Thinking..." })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { ref: scrollRef })
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { ref: scrollRef })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("form", { onSubmit: handleSubmit, className: "flex shrink-0 gap-2 border-t p-4", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("form", { onSubmit: handleSubmit, className: "flex shrink-0 gap-2 border-t p-4", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "input",
           {
             type: "text",
@@ -491,14 +608,14 @@ function VendureAiChat({
             className: "flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           "button",
           {
             type: "submit",
             disabled: isLoading || !inputValue.trim(),
             className: "inline-flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50",
             "aria-label": "Send message",
-            children: isLoading ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.Loader2, { className: "h-4 w-4 animate-spin" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_lucide_react3.Send, { className: "h-4 w-4" })
+            children: isLoading ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.Loader2, { className: "h-4 w-4 animate-spin" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_lucide_react4.Send, { className: "h-4 w-4" })
           }
         )
       ] })
@@ -513,6 +630,7 @@ function defaultFormatPrice(price) {
   CartSummary,
   ChatMessage,
   CollectionBadge,
+  OrderCard,
   ProductCard,
   VendureAiChat,
   cn,

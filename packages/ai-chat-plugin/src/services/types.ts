@@ -23,19 +23,24 @@ export interface AddToCartAction {
 }
 
 /** Structured order returned in chat responses */
+/** A single line item in an order history entry */
+export interface AiChatOrderLine {
+    productName: string;
+    quantity: number;
+    slug: string;
+    variantId: string;
+    image: string | null;
+    linePriceWithTax: number;
+}
+
+/** Structured order returned in chat responses */
 export interface AiChatOrder {
     id: string;
     code: string;
     state: string;
     total: number;
     orderPlacedAt: string | null;
-    lines: Array<{
-        productName: string;
-        quantity: number;
-        translations?: {
-            name: string;
-        }[];
-    }>;
+    lines: AiChatOrderLine[];
     fulfillments: Array<{
         state: string;
         method: string;

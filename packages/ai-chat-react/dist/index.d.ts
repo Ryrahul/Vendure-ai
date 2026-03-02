@@ -39,12 +39,36 @@ interface ChatActiveOrder {
     totalWithTax: number;
     lines: ChatCartLine[];
 }
+/** A single line item in an order history entry */
+interface ChatOrderLine {
+    productName: string;
+    quantity: number;
+    slug: string;
+    variantId: string;
+    image: string | null;
+    linePriceWithTax: number;
+}
+/** An order from order history or tracking */
+interface ChatOrder {
+    id: string;
+    code: string;
+    state: string;
+    total: number;
+    orderPlacedAt: string | null;
+    lines: ChatOrderLine[];
+    fulfillments: Array<{
+        state: string;
+        method: string;
+        trackingCode: string | null;
+    }>;
+}
 /** Extracted structured data from an assistant message */
 interface ExtractedData {
     products: ChatProduct[];
     collections: ChatCollection[];
     addToCartAction?: AddToCartAction;
     activeOrder?: ChatActiveOrder;
+    orders?: ChatOrder[];
 }
 /** Props for the main VendureAiChat component */
 interface VendureAiChatProps {
@@ -80,6 +104,8 @@ interface VendureAiChatProps {
     renderCollection?: (collection: ChatCollection) => React.ReactNode;
     /** Custom renderer for cart summary */
     renderCartSummary?: (order: ChatActiveOrder) => React.ReactNode;
+    /** Custom renderer for order history cards */
+    renderOrder?: (order: ChatOrder) => React.ReactNode;
     /** Additional CSS class name */
     className?: string;
     /**
@@ -108,7 +134,7 @@ interface UseVendureChatOptions {
  * Uses Tailwind CSS for styling. Works with any React framework
  * (Next.js, Remix, Vite, CRA, etc.).
  */
-declare function VendureAiChat({ vendureUrl, authToken, chatEndpoint, position, title, placeholder, welcomeMessage, quickActions, onAddToCart, onCartUpdate, onNavigate, renderProduct, renderCollection, renderCartSummary, className, formatPrice, }: VendureAiChatProps): react_jsx_runtime.JSX.Element;
+declare function VendureAiChat({ vendureUrl, authToken, chatEndpoint, position, title, placeholder, welcomeMessage, quickActions, onAddToCart, onCartUpdate, onNavigate, renderProduct, renderCollection, renderCartSummary, renderOrder, className, formatPrice, }: VendureAiChatProps): react_jsx_runtime.JSX.Element;
 
 interface UseVendureChatReturn {
     /** All chat messages */
@@ -143,11 +169,12 @@ interface ChatMessageProps {
     renderProduct?: VendureAiChatProps['renderProduct'];
     renderCollection?: VendureAiChatProps['renderCollection'];
     renderCartSummary?: VendureAiChatProps['renderCartSummary'];
+    renderOrder?: VendureAiChatProps['renderOrder'];
     formatPrice: (price: number) => string;
     addingToCart: string | null;
     onAddToCartClick: (variantId: string, productName: string, quantity?: number) => void;
 }
-declare function ChatMessage({ message, onNavigate, renderProduct, renderCollection, renderCartSummary, formatPrice, addingToCart, onAddToCartClick, }: ChatMessageProps): react_jsx_runtime.JSX.Element | null;
+declare function ChatMessage({ message, onNavigate, renderProduct, renderCollection, renderCartSummary, renderOrder, formatPrice, addingToCart, onAddToCartClick, }: ChatMessageProps): react_jsx_runtime.JSX.Element | null;
 
 interface ProductCardProps {
     product: ChatProduct;
@@ -173,6 +200,14 @@ interface CartSummaryProps {
 }
 declare function CartSummary({ order, formatPrice, className }: CartSummaryProps): react_jsx_runtime.JSX.Element;
 
+interface OrderCardProps {
+    order: ChatOrder;
+    onNavigate?: (path: string) => void;
+    formatPrice: (price: number) => string;
+    className?: string;
+}
+declare function OrderCard({ order, onNavigate, formatPrice, className }: OrderCardProps): react_jsx_runtime.JSX.Element;
+
 /** Extract structured data (products, collections, cart actions) from a UIMessage's tool parts */
 declare function extractDataFromMessage(message: UIMessage): ExtractedData;
 /** Get the text content from message parts */
@@ -180,4 +215,4 @@ declare function getMessageText(message: UIMessage): string;
 
 declare function cn(...inputs: ClassValue[]): string;
 
-export { type AddToCartAction, CartSummary, type ChatActiveOrder, type ChatCartLine, type ChatCollection, ChatMessage, type ChatProduct, CollectionBadge, type ExtractedData, ProductCard, type UseVendureChatOptions, type UseVendureChatReturn, VendureAiChat, type VendureAiChatProps, cn, extractDataFromMessage, getMessageText, useVendureChat };
+export { type AddToCartAction, CartSummary, type ChatActiveOrder, type ChatCartLine, type ChatCollection, ChatMessage, type ChatOrder, type ChatOrderLine, type ChatProduct, CollectionBadge, type ExtractedData, OrderCard, ProductCard, type UseVendureChatOptions, type UseVendureChatReturn, VendureAiChat, type VendureAiChatProps, cn, extractDataFromMessage, getMessageText, useVendureChat };

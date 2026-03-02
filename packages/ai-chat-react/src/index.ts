@@ -10,6 +10,7 @@ export { ChatMessage } from './components/ChatMessage';
 export { ProductCard } from './components/ProductCard';
 export { CollectionBadge } from './components/CollectionBadge';
 export { CartSummary } from './components/CartSummary';
+export { OrderCard } from './components/OrderCard';
 
 // Types
 export type {
@@ -17,6 +18,8 @@ export type {
     UseVendureChatOptions,
     ChatProduct,
     ChatCollection,
+    ChatOrder,
+    ChatOrderLine,
     AddToCartAction,
     ChatCartLine,
     ChatActiveOrder,

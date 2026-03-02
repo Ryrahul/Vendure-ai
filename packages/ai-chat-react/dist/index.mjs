@@ -32,6 +32,9 @@ function extractToolOutput(p, data) {
   if (result.activeOrder) {
     data.activeOrder = result.activeOrder;
   }
+  if (Array.isArray(result.orders) && result.orders.length > 0) {
+    data.orders = result.orders;
+  }
 }
 function extractDataFromMessage(message) {
   const data = { products: [], collections: [] };
@@ -205,25 +208,124 @@ function CartSummary({ order, formatPrice, className }) {
   ] });
 }
 
-// src/components/ChatMessage.tsx
+// src/components/OrderCard.tsx
+import { Package } from "lucide-react";
 import { jsx as jsx4, jsxs as jsxs3 } from "react/jsx-runtime";
+function getStateLabel(state) {
+  var _a;
+  const map = {
+    ArrangingPayment: "Awaiting Payment",
+    PaymentAuthorized: "Payment Authorized",
+    PaymentSettled: "Payment Settled",
+    PartiallyShipped: "Partially Shipped",
+    Shipped: "Shipped",
+    PartiallyDelivered: "Partially Delivered",
+    Delivered: "Delivered",
+    Cancelled: "Cancelled"
+  };
+  return (_a = map[state]) != null ? _a : state;
+}
+function getStateBadgeClass(state) {
+  if (state === "Delivered") return "bg-green-100 text-green-800";
+  if (state === "Shipped" || state === "PartiallyShipped") return "bg-blue-100 text-blue-800";
+  if (state === "Cancelled") return "bg-red-100 text-red-800";
+  return "bg-muted text-muted-foreground";
+}
+function OrderCard({ order, onNavigate, formatPrice, className }) {
+  const placedDate = order.orderPlacedAt ? new Date(order.orderPlacedAt).toLocaleDateString(void 0, { year: "numeric", month: "short", day: "numeric" }) : null;
+  return /* @__PURE__ */ jsxs3("div", { className: cn("rounded-md border bg-background p-3 space-y-2", className), children: [
+    /* @__PURE__ */ jsxs3("div", { className: "flex items-center justify-between", children: [
+      /* @__PURE__ */ jsxs3("div", { className: "flex items-center gap-1.5 text-xs font-medium text-muted-foreground", children: [
+        /* @__PURE__ */ jsx4(Package, { className: "h-3 w-3" }),
+        /* @__PURE__ */ jsxs3("span", { children: [
+          "Order ",
+          order.code
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx4("span", { className: cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", getStateBadgeClass(order.state)), children: getStateLabel(order.state) })
+    ] }),
+    /* @__PURE__ */ jsxs3("div", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [
+      placedDate && /* @__PURE__ */ jsx4("span", { children: placedDate }),
+      /* @__PURE__ */ jsx4("span", { className: "font-semibold text-foreground", children: formatPrice(order.total) })
+    ] }),
+    /* @__PURE__ */ jsx4("div", { className: "space-y-1.5", children: order.lines.map((line, idx) => {
+      const handleClick = (e) => {
+        if (onNavigate && line.slug) {
+          e.preventDefault();
+          onNavigate(`/product/${line.slug}`);
+        }
+      };
+      return /* @__PURE__ */ jsxs3("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsx4(
+          "a",
+          {
+            href: line.slug ? `/product/${line.slug}` : "#",
+            onClick: handleClick,
+            className: "relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted",
+            children: line.image ? /* @__PURE__ */ jsx4(
+              "img",
+              {
+                src: line.image,
+                alt: line.productName,
+                className: "h-full w-full object-cover",
+                loading: "lazy"
+              }
+            ) : /* @__PURE__ */ jsx4("span", { className: "text-muted-foreground text-[9px] flex items-center justify-center h-full", children: "No img" })
+          }
+        ),
+        /* @__PURE__ */ jsxs3("div", { className: "min-w-0 flex-1", children: [
+          /* @__PURE__ */ jsx4(
+            "a",
+            {
+              href: line.slug ? `/product/${line.slug}` : "#",
+              onClick: handleClick,
+              className: "block",
+              children: /* @__PURE__ */ jsx4("p", { className: "text-sm line-clamp-1 hover:underline", children: line.productName })
+            }
+          ),
+          /* @__PURE__ */ jsxs3("p", { className: "text-xs text-muted-foreground", children: [
+            "Qty: ",
+            line.quantity,
+            " \xB7 ",
+            formatPrice(line.linePriceWithTax)
+          ] })
+        ] })
+      ] }, idx);
+    }) }),
+    order.fulfillments.length > 0 && /* @__PURE__ */ jsx4("div", { className: "border-t pt-1.5 space-y-0.5", children: order.fulfillments.map((f, idx) => /* @__PURE__ */ jsxs3("p", { className: "text-xs text-muted-foreground", children: [
+      f.method,
+      ": ",
+      /* @__PURE__ */ jsx4("span", { className: "font-medium", children: f.state }),
+      f.trackingCode && /* @__PURE__ */ jsxs3("span", { className: "ml-1", children: [
+        "(Tracking: ",
+        /* @__PURE__ */ jsx4("span", { className: "font-mono", children: f.trackingCode }),
+        ")"
+      ] })
+    ] }, idx)) })
+  ] });
+}
+
+// src/components/ChatMessage.tsx
+import { jsx as jsx5, jsxs as jsxs4 } from "react/jsx-runtime";
 function ChatMessage({
   message,
   onNavigate,
   renderProduct,
   renderCollection,
   renderCartSummary,
+  renderOrder,
   formatPrice,
   addingToCart,
   onAddToCartClick
 }) {
+  var _a;
   const text = getMessageText(message);
   const data = message.role === "assistant" ? extractDataFromMessage(message) : null;
-  if (message.role === "assistant" && !text && !(data == null ? void 0 : data.products.length) && !(data == null ? void 0 : data.collections.length) && !(data == null ? void 0 : data.activeOrder)) {
+  if (message.role === "assistant" && !text && !(data == null ? void 0 : data.products.length) && !(data == null ? void 0 : data.collections.length) && !(data == null ? void 0 : data.activeOrder) && !((_a = data == null ? void 0 : data.orders) == null ? void 0 : _a.length)) {
     return null;
   }
   const isUser = message.role === "user";
-  return /* @__PURE__ */ jsx4("div", { className: cn("flex", isUser ? "justify-end" : "justify-start"), children: /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsx5("div", { className: cn("flex", isUser ? "justify-end" : "justify-start"), children: /* @__PURE__ */ jsxs4(
     "div",
     {
       className: cn(
@@ -231,13 +333,24 @@ function ChatMessage({
         isUser ? "bg-primary text-primary-foreground" : "bg-muted"
       ),
       children: [
-        message.role === "assistant" && text ? /* @__PURE__ */ jsx4("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ jsx4(ReactMarkdown, { children: text }) }) : message.role === "user" ? /* @__PURE__ */ jsx4("p", { className: "whitespace-pre-wrap", children: text }) : null,
-        data && data.collections.length > 0 && /* @__PURE__ */ jsx4("div", { className: "mt-2 flex flex-wrap gap-1.5", children: data.collections.map(
-          (c) => renderCollection ? /* @__PURE__ */ jsx4(React.Fragment, { children: renderCollection(c) }, c.id) : /* @__PURE__ */ jsx4(CollectionBadge, { collection: c, onNavigate }, c.id)
+        message.role === "assistant" && text ? /* @__PURE__ */ jsx5("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ jsx5(ReactMarkdown, { children: text }) }) : message.role === "user" ? /* @__PURE__ */ jsx5("p", { className: "whitespace-pre-wrap", children: text }) : null,
+        data && data.collections.length > 0 && /* @__PURE__ */ jsx5("div", { className: "mt-2 flex flex-wrap gap-1.5", children: data.collections.map(
+          (c) => renderCollection ? /* @__PURE__ */ jsx5(React.Fragment, { children: renderCollection(c) }, c.id) : /* @__PURE__ */ jsx5(CollectionBadge, { collection: c, onNavigate }, c.id)
         ) }),
-        (data == null ? void 0 : data.activeOrder) && data.activeOrder.lines.length > 0 && (renderCartSummary ? renderCartSummary(data.activeOrder) : /* @__PURE__ */ jsx4(CartSummary, { order: data.activeOrder, formatPrice })),
-        data && data.products.length > 0 && /* @__PURE__ */ jsx4("div", { className: "mt-3 space-y-2", children: data.products.map(
-          (p) => renderProduct ? /* @__PURE__ */ jsx4(React.Fragment, { children: renderProduct(p) }, p.id) : /* @__PURE__ */ jsx4(
+        (data == null ? void 0 : data.activeOrder) && data.activeOrder.lines.length > 0 && (renderCartSummary ? renderCartSummary(data.activeOrder) : /* @__PURE__ */ jsx5(CartSummary, { order: data.activeOrder, formatPrice })),
+        (data == null ? void 0 : data.orders) && data.orders.length > 0 && /* @__PURE__ */ jsx5("div", { className: "mt-3 space-y-2", children: data.orders.map(
+          (order) => renderOrder ? /* @__PURE__ */ jsx5(React.Fragment, { children: renderOrder(order) }, order.id) : /* @__PURE__ */ jsx5(
+            OrderCard,
+            {
+              order,
+              onNavigate,
+              formatPrice
+            },
+            order.id
+          )
+        ) }),
+        data && data.products.length > 0 && /* @__PURE__ */ jsx5("div", { className: "mt-3 space-y-2", children: data.products.map(
+          (p) => renderProduct ? /* @__PURE__ */ jsx5(React.Fragment, { children: renderProduct(p) }, p.id) : /* @__PURE__ */ jsx5(
             ProductCard,
             {
               product: p,
@@ -255,7 +368,7 @@ function ChatMessage({
 }
 
 // src/components/VendureAiChat.tsx
-import { Fragment, jsx as jsx5, jsxs as jsxs4 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
 var DEFAULT_QUICK_ACTIONS = [
   "What do you sell?",
   "Show me your collections",
@@ -278,6 +391,7 @@ function VendureAiChat({
   renderProduct,
   renderCollection,
   renderCartSummary,
+  renderOrder,
   className,
   formatPrice = defaultFormatPrice
 }) {
@@ -298,20 +412,21 @@ function VendureAiChat({
   useEffect(() => {
     var _a;
     if (status !== "ready") return;
-    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
-    if (!lastAssistantMsg) return;
-    const data = extractDataFromMessage(lastAssistantMsg);
-    if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(lastAssistantMsg.id + "-cartupdate")) {
-      processedActionsRef.current.add(lastAssistantMsg.id + "-cartupdate");
-      onCartUpdate(data.activeOrder);
-    }
-    if (data.addToCartAction && !processedActionsRef.current.has(lastAssistantMsg.id + "-cart")) {
-      processedActionsRef.current.add(lastAssistantMsg.id + "-cart");
-      handleAddToCartAction(
-        data.addToCartAction.variantId,
-        (_a = data.addToCartAction.productName) != null ? _a : "Item",
-        data.addToCartAction.quantity
-      );
+    for (const msg of messages) {
+      if (msg.role !== "assistant") continue;
+      const data = extractDataFromMessage(msg);
+      if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(msg.id + "-cartupdate")) {
+        processedActionsRef.current.add(msg.id + "-cartupdate");
+        onCartUpdate(data.activeOrder);
+      }
+      if (data.addToCartAction && !processedActionsRef.current.has(msg.id + "-cart")) {
+        processedActionsRef.current.add(msg.id + "-cart");
+        handleAddToCartAction(
+          data.addToCartAction.variantId,
+          (_a = data.addToCartAction.productName) != null ? _a : "Item",
+          data.addToCartAction.quantity
+        );
+      }
     }
   }, [messages, status]);
   async function handleAddToCartAction(variantId, productName, quantity = 1) {
@@ -345,9 +460,9 @@ function VendureAiChat({
   }
   const isInline = position === "inline";
   if (isInline) {
-    return /* @__PURE__ */ jsx5("div", { className: cn("flex h-full w-full flex-col overflow-hidden rounded-lg border bg-background", className), children: renderPanel() });
+    return /* @__PURE__ */ jsx6("div", { className: cn("flex h-full w-full flex-col overflow-hidden rounded-lg border bg-background", className), children: renderPanel() });
   }
-  return /* @__PURE__ */ jsxs4(
+  return /* @__PURE__ */ jsxs5(
     "div",
     {
       className: cn(
@@ -356,9 +471,9 @@ function VendureAiChat({
         className
       ),
       children: [
-        isOpen && /* @__PURE__ */ jsxs4(Fragment, { children: [
-          /* @__PURE__ */ jsx5("div", { className: "fixed inset-0 z-[-1]", onClick: () => setIsOpen(false) }),
-          /* @__PURE__ */ jsx5(
+        isOpen && /* @__PURE__ */ jsxs5(Fragment, { children: [
+          /* @__PURE__ */ jsx6("div", { className: "fixed inset-0 z-[-1]", onClick: () => setIsOpen(false) }),
+          /* @__PURE__ */ jsx6(
             "div",
             {
               className: cn(
@@ -369,53 +484,53 @@ function VendureAiChat({
             }
           )
         ] }),
-        /* @__PURE__ */ jsx5(
+        /* @__PURE__ */ jsx6(
           "button",
           {
             onClick: () => setIsOpen(!isOpen),
             className: "flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 hover:bg-primary/90",
             "aria-label": isOpen ? "Close chat" : "Open chat",
-            children: isOpen ? /* @__PURE__ */ jsx5(X, { className: "h-6 w-6" }) : /* @__PURE__ */ jsx5(MessageCircle, { className: "h-6 w-6" })
+            children: isOpen ? /* @__PURE__ */ jsx6(X, { className: "h-6 w-6" }) : /* @__PURE__ */ jsx6(MessageCircle, { className: "h-6 w-6" })
           }
         )
       ]
     }
   );
   function renderPanel() {
-    return /* @__PURE__ */ jsxs4(Fragment, { children: [
-      /* @__PURE__ */ jsxs4("div", { className: "flex shrink-0 items-center justify-between border-b p-4", children: [
-        /* @__PURE__ */ jsxs4("h2", { className: "flex items-center gap-2 text-left font-semibold", children: [
-          /* @__PURE__ */ jsx5(Store, { className: "h-5 w-5 text-primary" }),
+    return /* @__PURE__ */ jsxs5(Fragment, { children: [
+      /* @__PURE__ */ jsxs5("div", { className: "flex shrink-0 items-center justify-between border-b p-4", children: [
+        /* @__PURE__ */ jsxs5("h2", { className: "flex items-center gap-2 text-left font-semibold", children: [
+          /* @__PURE__ */ jsx6(Store, { className: "h-5 w-5 text-primary" }),
           title
         ] }),
-        !isInline && /* @__PURE__ */ jsx5(
+        !isInline && /* @__PURE__ */ jsx6(
           "button",
           {
             onClick: () => setIsOpen(false),
             className: "flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
             "aria-label": "Close",
-            children: /* @__PURE__ */ jsx5(X, { className: "h-4 w-4" })
+            children: /* @__PURE__ */ jsx6(X, { className: "h-4 w-4" })
           }
         )
       ] }),
-      /* @__PURE__ */ jsx5("div", { className: "min-h-0 flex-1 overflow-y-auto p-4", children: /* @__PURE__ */ jsxs4("div", { className: "space-y-4", children: [
-        messages.length === 0 && /* @__PURE__ */ jsxs4("div", { className: "space-y-4 py-4", children: [
-          /* @__PURE__ */ jsx5("div", { className: "flex justify-start", children: /* @__PURE__ */ jsx5("div", { className: "max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm", children: /* @__PURE__ */ jsx5("p", { children: welcomeMessage }) }) }),
-          /* @__PURE__ */ jsx5("div", { className: "flex flex-wrap gap-2", children: quickActions.map((action) => /* @__PURE__ */ jsxs4(
+      /* @__PURE__ */ jsx6("div", { className: "min-h-0 flex-1 overflow-y-auto p-4", children: /* @__PURE__ */ jsxs5("div", { className: "space-y-4", children: [
+        messages.length === 0 && /* @__PURE__ */ jsxs5("div", { className: "space-y-4 py-4", children: [
+          /* @__PURE__ */ jsx6("div", { className: "flex justify-start", children: /* @__PURE__ */ jsx6("div", { className: "max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm", children: /* @__PURE__ */ jsx6("p", { children: welcomeMessage }) }) }),
+          /* @__PURE__ */ jsx6("div", { className: "flex flex-wrap gap-2", children: quickActions.map((action) => /* @__PURE__ */ jsxs5(
             "button",
             {
               onClick: () => handleSend(action),
               disabled: isLoading,
               className: "inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50",
               children: [
-                /* @__PURE__ */ jsx5(Sparkles, { className: "h-3 w-3 text-primary" }),
+                /* @__PURE__ */ jsx6(Sparkles, { className: "h-3 w-3 text-primary" }),
                 action
               ]
             },
             action
           )) })
         ] }),
-        messages.map((msg) => /* @__PURE__ */ jsx5(
+        messages.map((msg) => /* @__PURE__ */ jsx6(
           ChatMessage,
           {
             message: msg,
@@ -423,20 +538,21 @@ function VendureAiChat({
             renderProduct,
             renderCollection,
             renderCartSummary,
+            renderOrder,
             formatPrice,
             addingToCart,
             onAddToCartClick: handleAddToCartClick
           },
           msg.id
         )),
-        isLoading && /* @__PURE__ */ jsx5("div", { className: "flex justify-start", children: /* @__PURE__ */ jsxs4("div", { className: "flex items-center gap-2 rounded-lg bg-muted px-3 py-2", children: [
-          /* @__PURE__ */ jsx5(Loader22, { className: "h-4 w-4 animate-spin text-muted-foreground" }),
-          /* @__PURE__ */ jsx5("span", { className: "text-xs text-muted-foreground", children: status === "streaming" ? "Responding..." : "Thinking..." })
+        isLoading && /* @__PURE__ */ jsx6("div", { className: "flex justify-start", children: /* @__PURE__ */ jsxs5("div", { className: "flex items-center gap-2 rounded-lg bg-muted px-3 py-2", children: [
+          /* @__PURE__ */ jsx6(Loader22, { className: "h-4 w-4 animate-spin text-muted-foreground" }),
+          /* @__PURE__ */ jsx6("span", { className: "text-xs text-muted-foreground", children: status === "streaming" ? "Responding..." : "Thinking..." })
         ] }) }),
-        /* @__PURE__ */ jsx5("div", { ref: scrollRef })
+        /* @__PURE__ */ jsx6("div", { ref: scrollRef })
       ] }) }),
-      /* @__PURE__ */ jsxs4("form", { onSubmit: handleSubmit, className: "flex shrink-0 gap-2 border-t p-4", children: [
-        /* @__PURE__ */ jsx5(
+      /* @__PURE__ */ jsxs5("form", { onSubmit: handleSubmit, className: "flex shrink-0 gap-2 border-t p-4", children: [
+        /* @__PURE__ */ jsx6(
           "input",
           {
             type: "text",
@@ -447,14 +563,14 @@ function VendureAiChat({
             className: "flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
           }
         ),
-        /* @__PURE__ */ jsx5(
+        /* @__PURE__ */ jsx6(
           "button",
           {
             type: "submit",
             disabled: isLoading || !inputValue.trim(),
             className: "inline-flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50",
             "aria-label": "Send message",
-            children: isLoading ? /* @__PURE__ */ jsx5(Loader22, { className: "h-4 w-4 animate-spin" }) : /* @__PURE__ */ jsx5(Send, { className: "h-4 w-4" })
+            children: isLoading ? /* @__PURE__ */ jsx6(Loader22, { className: "h-4 w-4 animate-spin" }) : /* @__PURE__ */ jsx6(Send, { className: "h-4 w-4" })
           }
         )
       ] })
@@ -468,6 +584,7 @@ export {
   CartSummary,
   ChatMessage,
   CollectionBadge,
+  OrderCard,
   ProductCard,
   VendureAiChat,
   cn,

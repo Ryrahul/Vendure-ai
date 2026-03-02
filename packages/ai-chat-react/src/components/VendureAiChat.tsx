@@ -37,6 +37,7 @@ export function VendureAiChat({
     renderProduct,
     renderCollection,
     renderCartSummary,
+    renderOrder,
     className,
     formatPrice = defaultFormatPrice,
 }: VendureAiChatProps) {
@@ -57,27 +58,32 @@ export function VendureAiChat({
         scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, status]);
 
-    // Process add-to-cart actions when stream finishes
+    // Process add-to-cart and cart-update actions when stream finishes.
+    // Scans ALL assistant messages (not just the last) because multi-step tool calls
+    // may produce multiple assistant messages — the addToCartAction might be in an
+    // earlier step message while the text response is in the last one.
     useEffect(() => {
         if (status !== 'ready') return;
-        const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
-        if (!lastAssistantMsg) return;
 
-        const data = extractDataFromMessage(lastAssistantMsg);
+        for (const msg of messages) {
+            if (msg.role !== 'assistant') continue;
 
-        // Notify when cart state changes (add, adjust, checkout)
-        if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(lastAssistantMsg.id + '-cartupdate')) {
-            processedActionsRef.current.add(lastAssistantMsg.id + '-cartupdate');
-            onCartUpdate(data.activeOrder);
-        }
+            const data = extractDataFromMessage(msg);
 
-        if (data.addToCartAction && !processedActionsRef.current.has(lastAssistantMsg.id + '-cart')) {
-            processedActionsRef.current.add(lastAssistantMsg.id + '-cart');
-            handleAddToCartAction(
-                data.addToCartAction.variantId,
-                data.addToCartAction.productName ?? 'Item',
-                data.addToCartAction.quantity,
-            );
+            // Notify when cart state changes (add, adjust, checkout)
+            if (data.activeOrder && onCartUpdate && !processedActionsRef.current.has(msg.id + '-cartupdate')) {
+                processedActionsRef.current.add(msg.id + '-cartupdate');
+                onCartUpdate(data.activeOrder);
+            }
+
+            if (data.addToCartAction && !processedActionsRef.current.has(msg.id + '-cart')) {
+                processedActionsRef.current.add(msg.id + '-cart');
+                handleAddToCartAction(
+                    data.addToCartAction.variantId,
+                    data.addToCartAction.productName ?? 'Item',
+                    data.addToCartAction.quantity,
+                );
+            }
         }
     }, [messages, status]);
 
@@ -220,6 +226,7 @@ export function VendureAiChat({
                                 renderProduct={renderProduct}
                                 renderCollection={renderCollection}
                                 renderCartSummary={renderCartSummary}
+                                renderOrder={renderOrder}
                                 formatPrice={formatPrice}
                                 addingToCart={addingToCart}
                                 onAddToCartClick={handleAddToCartClick}

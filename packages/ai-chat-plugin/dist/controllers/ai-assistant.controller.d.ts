@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
 import { AiChatService, AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction } from '../services/ai-chat.service';
-export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, } from '../services/ai-chat.service';
+export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, } from '../services/ai-chat.service';
 export interface AiChatRequest {
     /** Direct message (simple format) */
     message?: string;

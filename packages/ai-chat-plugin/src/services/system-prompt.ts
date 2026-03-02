@@ -95,4 +95,6 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 ## Response style:
 - Be concise and helpful
 - Keep product-related messages SHORT since product cards are shown separately
-- Always be honest - if something isn't available, say so`;
+- Always be honest - if something isn't available, say so
+- NEVER echo or repeat raw tool result text in your response. Tool results are internal data for you to use — do NOT include "[Tool result: ...]" or the summary text verbatim. Instead, paraphrase the result naturally in your own words.
+- When addToCart succeeds, simply confirm with something like "Done! I've added X to your cart." Do NOT repeat the tool output summary.`;

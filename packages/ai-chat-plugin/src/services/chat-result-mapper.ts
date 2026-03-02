@@ -1,6 +1,6 @@
 import { Product, ProductVariant, Collection, Order, TransactionalConnection } from '@vendure/core';
 import { In } from 'typeorm';
-import type { AiChatProduct, AiChatCollection, AiChatOrder, AiActiveOrder, AiCartLine } from './types';
+import type { AiChatProduct, AiChatCollection, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine } from './types';
 
 export class ChatResultMapper {
     constructor(
@@ -18,13 +18,26 @@ export class ChatResultMapper {
 
     mapOrders(orders: Order[]): AiChatOrder[] {
         return orders.map(order => {
-            const lines = ((order as any).lines ?? []).map((line: any) => {
+            const lines: AiChatOrderLine[] = ((order as any).lines ?? []).map((line: any) => {
                 const name = line.productVariant?.translations?.[0]?.name
                     || line.productVariant?.name
                     || 'Unknown product';
+                // Resolve product image: prefer order line's featured asset, then variant's, then product's
+                const imagePreview = line.featuredAsset?.preview
+                    ?? line.productVariant?.featuredAsset?.preview
+                    ?? line.productVariant?.product?.featuredAsset?.preview
+                    ?? null;
+                // Resolve slug from product translations or product itself
+                const slug = line.productVariant?.product?.translations?.[0]?.slug
+                    ?? line.productVariant?.product?.slug
+                    ?? '';
                 return {
                     productName: name,
                     quantity: line.quantity ?? 0,
+                    slug: String(slug),
+                    variantId: String(line.productVariant?.id ?? ''),
+                    image: this.resolveAssetUrl(imagePreview),
+                    linePriceWithTax: line.linePriceWithTax ?? line.linePrice ?? 0,
                 };
             });
 

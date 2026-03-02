@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai';
-import type { ChatProduct, ChatCollection, AddToCartAction, ChatActiveOrder, ExtractedData } from '../types';
+import type { ChatProduct, ChatCollection, ChatOrder, AddToCartAction, ChatActiveOrder, ExtractedData } from '../types';
 
 function extractToolOutput(p: Record<string, unknown>, data: ExtractedData) {
     const result = p.output as Record<string, unknown>;
@@ -30,6 +30,11 @@ function extractToolOutput(p: Record<string, unknown>, data: ExtractedData) {
     }
     if (result.activeOrder) {
         data.activeOrder = result.activeOrder as ChatActiveOrder;
+    }
+
+    // Extract orders (from getOrderHistory / trackOrder)
+    if (Array.isArray(result.orders) && result.orders.length > 0) {
+        data.orders = result.orders as ChatOrder[];
     }
 }
 

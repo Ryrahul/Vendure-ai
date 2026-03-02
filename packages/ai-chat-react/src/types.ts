@@ -40,12 +40,38 @@ export interface ChatActiveOrder {
     lines: ChatCartLine[];
 }
 
+/** A single line item in an order history entry */
+export interface ChatOrderLine {
+    productName: string;
+    quantity: number;
+    slug: string;
+    variantId: string;
+    image: string | null;
+    linePriceWithTax: number;
+}
+
+/** An order from order history or tracking */
+export interface ChatOrder {
+    id: string;
+    code: string;
+    state: string;
+    total: number;
+    orderPlacedAt: string | null;
+    lines: ChatOrderLine[];
+    fulfillments: Array<{
+        state: string;
+        method: string;
+        trackingCode: string | null;
+    }>;
+}
+
 /** Extracted structured data from an assistant message */
 export interface ExtractedData {
     products: ChatProduct[];
     collections: ChatCollection[];
     addToCartAction?: AddToCartAction;
     activeOrder?: ChatActiveOrder;
+    orders?: ChatOrder[];
 }
 
 /** Props for the main VendureAiChat component */
@@ -88,6 +114,8 @@ export interface VendureAiChatProps {
     renderCollection?: (collection: ChatCollection) => React.ReactNode;
     /** Custom renderer for cart summary */
     renderCartSummary?: (order: ChatActiveOrder) => React.ReactNode;
+    /** Custom renderer for order history cards */
+    renderOrder?: (order: ChatOrder) => React.ReactNode;
 
     // Styling
     /** Additional CSS class name */

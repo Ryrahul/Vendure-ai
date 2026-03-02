@@ -14,5 +14,5 @@ export type { SimilarVariantResult } from './services/variant-embedding.service'
 export type { SimilarCollectionResult } from './services/collection-embedding.service';
 export { AI_ASSISTANT_OPTIONS, EMBED_ALL_QUEUE_NAME } from './constants';
 export { AiAssistantController } from './controllers/ai-assistant.controller';
-export type { AiChatRequest, AiChatResponse, AiChatProduct, AddToCartAction, AiChatOrder, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, } from './controllers/ai-assistant.controller';
+export type { AiChatRequest, AiChatResponse, AiChatProduct, AddToCartAction, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, } from './controllers/ai-assistant.controller';
 //# sourceMappingURL=index.d.ts.map

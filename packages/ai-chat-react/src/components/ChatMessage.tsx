@@ -7,6 +7,7 @@ import { cn } from '../utils/cn';
 import { ProductCard } from './ProductCard';
 import { CollectionBadge } from './CollectionBadge';
 import { CartSummary } from './CartSummary';
+import { OrderCard } from './OrderCard';
 
 interface ChatMessageProps {
     message: UIMessage;
@@ -15,6 +16,7 @@ interface ChatMessageProps {
     renderProduct?: VendureAiChatProps['renderProduct'];
     renderCollection?: VendureAiChatProps['renderCollection'];
     renderCartSummary?: VendureAiChatProps['renderCartSummary'];
+    renderOrder?: VendureAiChatProps['renderOrder'];
     formatPrice: (price: number) => string;
     addingToCart: string | null;
     onAddToCartClick: (variantId: string, productName: string, quantity?: number) => void;
@@ -26,6 +28,7 @@ export function ChatMessage({
     renderProduct,
     renderCollection,
     renderCartSummary,
+    renderOrder,
     formatPrice,
     addingToCart,
     onAddToCartClick,
@@ -34,7 +37,7 @@ export function ChatMessage({
     const data: ExtractedData | null = message.role === 'assistant' ? extractDataFromMessage(message) : null;
 
     // Skip empty assistant messages (tool-only steps with no text)
-    if (message.role === 'assistant' && !text && !data?.products.length && !data?.collections.length && !data?.activeOrder) {
+    if (message.role === 'assistant' && !text && !data?.products.length && !data?.collections.length && !data?.activeOrder && !data?.orders?.length) {
         return null;
     }
 
@@ -78,6 +81,24 @@ export function ChatMessage({
                     ) : (
                         <CartSummary order={data.activeOrder} formatPrice={formatPrice} />
                     )
+                )}
+
+                {/* Order history */}
+                {data?.orders && data.orders.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        {data.orders.map((order) =>
+                            renderOrder ? (
+                                <React.Fragment key={order.id}>{renderOrder(order)}</React.Fragment>
+                            ) : (
+                                <OrderCard
+                                    key={order.id}
+                                    order={order}
+                                    onNavigate={onNavigate}
+                                    formatPrice={formatPrice}
+                                />
+                            ),
+                        )}
+                    </div>
                 )}
 
                 {/* Product cards */}

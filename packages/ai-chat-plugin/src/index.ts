@@ -20,6 +20,7 @@ export type {
     AiChatProduct,
     AddToCartAction,
     AiChatOrder,
+    AiChatOrderLine,
     AiActiveOrder,
     AiCartLine,
     SetShippingAddressAction,

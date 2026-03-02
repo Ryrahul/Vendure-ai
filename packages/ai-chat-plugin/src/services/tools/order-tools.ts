@@ -30,8 +30,13 @@ export class OrderTools {
             const orderRepo = this.connection.rawConnection.getRepository(Order);
             const orders = await orderRepo.createQueryBuilder('order')
                 .leftJoinAndSelect('order.lines', 'line')
+                .leftJoinAndSelect('line.featuredAsset', 'lineFeaturedAsset')
                 .leftJoinAndSelect('line.productVariant', 'variant')
                 .leftJoinAndSelect('variant.translations', 'variantTranslation')
+                .leftJoinAndSelect('variant.featuredAsset', 'variantFeaturedAsset')
+                .leftJoinAndSelect('variant.product', 'product')
+                .leftJoinAndSelect('product.featuredAsset', 'productFeaturedAsset')
+                .leftJoinAndSelect('product.translations', 'productTranslation')
                 .leftJoinAndSelect('order.fulfillments', 'fulfillment')
                 .where('order.customerId = :customerId', { customerId })
                 .andWhere('order.active = :active', { active: false })
@@ -75,8 +80,13 @@ export class OrderTools {
             const orderRepo = this.connection.rawConnection.getRepository(Order);
             let qb = orderRepo.createQueryBuilder('order')
                 .leftJoinAndSelect('order.lines', 'line')
+                .leftJoinAndSelect('line.featuredAsset', 'lineFeaturedAsset')
                 .leftJoinAndSelect('line.productVariant', 'variant')
                 .leftJoinAndSelect('variant.translations', 'variantTranslation')
+                .leftJoinAndSelect('variant.featuredAsset', 'variantFeaturedAsset')
+                .leftJoinAndSelect('variant.product', 'product')
+                .leftJoinAndSelect('product.featuredAsset', 'productFeaturedAsset')
+                .leftJoinAndSelect('product.translations', 'productTranslation')
                 .leftJoinAndSelect('order.fulfillments', 'fulfillment')
                 .where('order.customerId = :customerId', { customerId });
 

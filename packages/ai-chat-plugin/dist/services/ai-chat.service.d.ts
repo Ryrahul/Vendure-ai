@@ -6,8 +6,8 @@ import { type AiAssistantPluginOptions } from '../constants';
 import { EmbeddingService } from './embedding.service';
 import { ProductEmbeddingService } from './product-embedding.service';
 import { CollectionEmbeddingService } from './collection-embedding.service';
-import type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, ChatResult, StreamingChatResult } from './types';
-export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, ChatResult, StreamingChatResult, };
+import type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, ChatResult, StreamingChatResult } from './types';
+export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, ChatResult, StreamingChatResult, };
 export declare class AiChatService implements OnModuleInit {
     private options;
     private connection;
