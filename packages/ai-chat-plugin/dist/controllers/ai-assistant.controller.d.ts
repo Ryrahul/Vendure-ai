@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
 import { AiChatService, AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiActiveOrder, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction } from '../services/ai-chat.service';
 import { ConversationCacheService } from '../services/conversation-cache.service';
+import { type AiAssistantPluginOptions } from '../constants';
 export type { AiChatProduct, AiChatCollection, AddToCartAction, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction, } from '../services/ai-chat.service';
 export interface AiChatRequest {
     /** Direct message (simple format) */
@@ -47,6 +48,7 @@ export interface AiChatResponse {
  * - POST /ai-assistant/stream — streaming response using Vercel AI SDK data stream protocol
  */
 export declare class AiAssistantController {
+    private options;
     private requestContextService;
     private customerService;
     private sessionService;
@@ -54,7 +56,8 @@ export declare class AiAssistantController {
     private aiChatService;
     private conversationCacheService;
     private readonly logger;
-    constructor(requestContextService: RequestContextService, customerService: CustomerService, sessionService: SessionService, configService: ConfigService, aiChatService: AiChatService, conversationCacheService: ConversationCacheService);
+    private readonly cacheEnabled;
+    constructor(options: AiAssistantPluginOptions, requestContextService: RequestContextService, customerService: CustomerService, sessionService: SessionService, configService: ConfigService, aiChatService: AiChatService, conversationCacheService: ConversationCacheService);
     /**
      * Helper: extract user message and conversation history from the request body.
      * Supports two formats:

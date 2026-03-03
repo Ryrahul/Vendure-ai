@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res, Logger } from '@nestjs/common';
+import { Body, Controller, Inject, Post, Req, Res, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
 import {
@@ -15,6 +15,7 @@ import {
     SetShippingMethodAction,
 } from '../services/ai-chat.service';
 import { ConversationCacheService } from '../services/conversation-cache.service';
+import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from '../constants';
 
 export type {
     AiChatProduct,
@@ -71,14 +72,20 @@ export interface AiChatResponse {
 export class AiAssistantController {
     private readonly logger = new Logger(AiAssistantController.name);
 
+    private readonly cacheEnabled: boolean;
+
     constructor(
+        @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
         private requestContextService: RequestContextService,
         private customerService: CustomerService,
         private sessionService: SessionService,
         private configService: ConfigService,
         private aiChatService: AiChatService,
         private conversationCacheService: ConversationCacheService,
-    ) {}
+    ) {
+        this.cacheEnabled = options.enableConversationCache !== false;
+        this.logger.log(`Conversation cache: ${this.cacheEnabled ? 'enabled' : 'disabled'}`);
+    }
 
     /**
      * Helper: extract user message and conversation history from the request body.
@@ -167,7 +174,7 @@ export class AiAssistantController {
         const { message, history: bodyHistory } = this.extractMessageAndHistory(body);
         const conversationId = body.conversationId;
 
-        if (conversationId) {
+        if (this.cacheEnabled && conversationId) {
             // Fetch history from server-side cache
             const cached = await this.conversationCacheService.getHistory(conversationId);
             const history = cached?.messages ?? [];
@@ -177,7 +184,7 @@ export class AiAssistantController {
             return { message, history, conversationId };
         }
 
-        // No conversationId — fall back to history from request body (backward compatible)
+        // Cache disabled or no conversationId — fall back to history from request body
         return { message, history: bodyHistory };
     }
 

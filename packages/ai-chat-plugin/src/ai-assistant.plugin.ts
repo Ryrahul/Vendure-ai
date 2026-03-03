@@ -20,8 +20,9 @@ import { embedAllSchemaExtension } from './api/schema-extensions';
 
 export type { AiAssistantPluginOptions } from './constants';
 
-const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel'>> = {
+const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' | 'enableConversationCache'>> = {
     embeddingModel: 'text-embedding-3-small',
+    enableConversationCache: true,
 };
 
 @VendurePlugin({

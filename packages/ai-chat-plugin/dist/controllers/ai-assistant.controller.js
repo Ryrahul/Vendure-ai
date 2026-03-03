@@ -18,13 +18,15 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@vendure/core");
 const ai_chat_service_1 = require("../services/ai-chat.service");
 const conversation_cache_service_1 = require("../services/conversation-cache.service");
+const constants_1 = require("../constants");
 /**
  * REST endpoints for the AI shopping assistant.
  * - POST /ai-assistant/chat — non-streaming JSON response (backward compatible)
  * - POST /ai-assistant/stream — streaming response using Vercel AI SDK data stream protocol
  */
 let AiAssistantController = AiAssistantController_1 = class AiAssistantController {
-    constructor(requestContextService, customerService, sessionService, configService, aiChatService, conversationCacheService) {
+    constructor(options, requestContextService, customerService, sessionService, configService, aiChatService, conversationCacheService) {
+        this.options = options;
         this.requestContextService = requestContextService;
         this.customerService = customerService;
         this.sessionService = sessionService;
@@ -32,6 +34,8 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
         this.aiChatService = aiChatService;
         this.conversationCacheService = conversationCacheService;
         this.logger = new common_1.Logger(AiAssistantController_1.name);
+        this.cacheEnabled = options.enableConversationCache !== false;
+        this.logger.log(`Conversation cache: ${this.cacheEnabled ? 'enabled' : 'disabled'}`);
     }
     /**
      * Helper: extract user message and conversation history from the request body.
@@ -108,14 +112,14 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
         var _a;
         const { message, history: bodyHistory } = this.extractMessageAndHistory(body);
         const conversationId = body.conversationId;
-        if (conversationId) {
+        if (this.cacheEnabled && conversationId) {
             // Fetch history from server-side cache
             const cached = await this.conversationCacheService.getHistory(conversationId);
             const history = (_a = cached === null || cached === void 0 ? void 0 : cached.messages) !== null && _a !== void 0 ? _a : [];
             this.logger.log(`[CACHE] Conversation ${conversationId}: ${history.length} cached messages (skipped ${bodyHistory.length} from request body)`);
             return { message, history, conversationId };
         }
-        // No conversationId — fall back to history from request body (backward compatible)
+        // Cache disabled or no conversationId — fall back to history from request body
         return { message, history: bodyHistory };
     }
     /**
@@ -257,7 +261,8 @@ __decorate([
 ], AiAssistantController.prototype, "stream", null);
 exports.AiAssistantController = AiAssistantController = AiAssistantController_1 = __decorate([
     (0, common_1.Controller)('ai-assistant'),
-    __metadata("design:paramtypes", [core_1.RequestContextService,
+    __param(0, (0, common_1.Inject)(constants_1.AI_ASSISTANT_OPTIONS)),
+    __metadata("design:paramtypes", [Object, core_1.RequestContextService,
         core_1.CustomerService,
         core_1.SessionService,
         core_1.ConfigService,

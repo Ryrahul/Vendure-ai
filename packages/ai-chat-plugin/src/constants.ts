@@ -29,4 +29,17 @@ export interface AiAssistantPluginOptions {
      * If not set, will be auto-detected from apiOptions (works for dev).
      */
     assetBaseUrl?: string;
+    /**
+     * Whether to cache conversation history server-side using Vendure's CacheService.
+     *
+     * When enabled, the frontend sends a `conversationId` with each request and the
+     * server stores/retrieves conversation history from cache instead of requiring
+     * the full message array in every request.
+     *
+     * Requires `DefaultCachePlugin` or `RedisCachePlugin` to be configured for
+     * persistence across server restarts. Falls back to in-memory cache otherwise.
+     *
+     * @default true
+     */
+    enableConversationCache?: boolean;
 }

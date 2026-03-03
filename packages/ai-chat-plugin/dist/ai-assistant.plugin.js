@@ -31,6 +31,7 @@ const constants_1 = require("./constants");
 const schema_extensions_1 = require("./api/schema-extensions");
 const defaultOptions = {
     embeddingModel: 'text-embedding-3-small',
+    enableConversationCache: true,
 };
 let AiAssistantPlugin = AiAssistantPlugin_1 = class AiAssistantPlugin {
     static init(options) {
