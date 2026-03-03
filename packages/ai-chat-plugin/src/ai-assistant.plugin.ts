@@ -16,6 +16,7 @@ import { EmbedAllJobService } from './services/embed-all-job.service';
 import { AiAssistantResolver } from './api/ai-assistant.resolver';
 import { AiAssistantController } from './controllers/ai-assistant.controller';
 import { AdminChatController } from './controllers/admin-chat.controller';
+import { AdminAiChatService } from './services/admin-ai-chat.service';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from './constants';
 import { embedAllSchemaExtension } from './api/schema-extensions';
 
@@ -41,6 +42,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         VariantEmbeddingService,
         CollectionEmbeddingService,
         AiChatService,
+        AdminAiChatService,
         ConversationCacheService,
         ProductEmbeddingHandler,
         VariantEmbeddingHandler,

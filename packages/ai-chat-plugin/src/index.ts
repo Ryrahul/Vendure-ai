@@ -8,6 +8,7 @@ export { ProductEmbeddingService } from './services/product-embedding.service';
 export { VariantEmbeddingService } from './services/variant-embedding.service';
 export { CollectionEmbeddingService } from './services/collection-embedding.service';
 export { AiChatService } from './services/ai-chat.service';
+export { AdminAiChatService } from './services/admin-ai-chat.service';
 export { ConversationCacheService } from './services/conversation-cache.service';
 export type { CachedConversation } from './services/conversation-cache.service';
 export type { EmbeddingOptions } from './services/embedding.service';
