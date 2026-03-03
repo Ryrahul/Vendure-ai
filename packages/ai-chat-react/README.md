@@ -2,7 +2,7 @@
 
 Drop-in AI shopping assistant React component for [Vendure](https://www.vendure.io/) stores. Renders a floating chat panel with product cards, collection badges, cart summary, and quick actions — all powered by the [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) backend.
 
-Styled with **Tailwind CSS** utility classes. Works with any React framework (Next.js, Remix, Vite, CRA, etc.).
+Ships a pre-compiled CSS file — just import and go. Works with any React framework (Next.js, Remix, Vite, CRA, etc.).
 
 ## Features
 
@@ -11,7 +11,7 @@ Styled with **Tailwind CSS** utility classes. Works with any React framework (Ne
 - **Product Cards** — Automatic product display with images, prices, and add-to-cart buttons
 - **Collection Badges** — Clickable collection/category links
 - **Cart Summary** — Shows active order with line items and totals
-- **Tailwind CSS** — Styled with utility classes, inherits your Tailwind theme (colors, radius, fonts)
+- **Zero Config Styles** — Ships pre-compiled CSS, just import and go. Inherits your theme via CSS variables
 - **Dark Mode** — Works with Tailwind's dark mode out of the box
 - **Framework Agnostic** — Works with Next.js, Remix, Vite, CRA, etc.
 - **Streaming** — Real-time response streaming via Vercel AI SDK
@@ -20,7 +20,6 @@ Styled with **Tailwind CSS** utility classes. Works with any React framework (Ne
 ## Requirements
 
 - React `>=18`
-- Tailwind CSS `>=3.0` (the component uses Tailwind utility classes)
 - A Vendure server with [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) installed
 
 ## Installation
@@ -33,6 +32,7 @@ npm install @rahul_vendure/ai-chat-react ai @ai-sdk/react
 
 ```tsx
 import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
+import '@rahul_vendure/ai-chat-react/styles.css';
 
 function App() {
     return (
@@ -46,7 +46,7 @@ function App() {
 
 This renders a floating chat button in the bottom-right corner. Click to open the chat panel.
 
-> **Note:** The component uses Tailwind utility classes like `bg-primary`, `text-foreground`, `bg-muted`, etc. These map to the standard shadcn/ui CSS variable convention. If you're using shadcn/ui, it works out of the box. Otherwise, define these CSS variables in your globals (see [Theming](#theming) below).
+> **Note:** The component uses CSS variables like `--primary`, `--foreground`, `--muted`, etc., following the standard [shadcn/ui convention](https://ui.shadcn.com/docs/theming). If you're using shadcn/ui, it works out of the box. Otherwise, define these CSS variables in your globals (see [Theming](#theming) below).
 
 ## Usage Levels
 
@@ -56,7 +56,71 @@ This renders a floating chat button in the bottom-right corner. Click to open th
 <VendureAiChat vendureUrl="https://my-vendure.com" />
 ```
 
-### Level 2: Configurable
+### Level 1 with auth, callbacks, and formatting
+
+Same component with auth token, price formatting, add-to-cart, cart refresh, and navigation — typical for a storefront navbar or layout:
+
+```tsx
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
+import '@rahul_vendure/ai-chat-react/styles.css';
+import { formatPrice } from '@/lib/format';
+
+export function NavbarChat({ vendureUrl, authToken }: { vendureUrl: string; authToken?: string }) {
+    const router = useRouter();
+
+    return (
+        <VendureAiChat
+            vendureUrl={vendureUrl}
+            authToken={authToken}
+            formatPrice={formatPrice}
+            position="bottom-right"
+            onCartUpdate={() => router.refresh()}
+            onAddToCart={async (variantId, quantity, productName) => {
+                const { addToCart } = await import('@/app/product/[slug]/actions');
+                const result = await addToCart(variantId, quantity);
+                if (result.success) {
+                    toast.success('Added to cart', {
+                        description: `${productName} has been added to your cart`,
+                    });
+                    router.refresh();
+                } else {
+                    toast.error('Error', {
+                        description: result.error || 'Failed to add item to cart',
+                    });
+                }
+            }}
+            onNavigate={(path) => router.push(path)}
+        />
+    );
+}
+```
+
+Get `authToken` from your server (e.g. via a wrapper like `NavbarChatWithAuth`) — see [Authentication](#authentication).
+
+**`formatPrice`** — Prices from the chat API are in **cents** (smallest currency unit). Provide a function `(price: number) => string`:
+
+```ts
+// lib/format.ts — example: USD with Intl
+export function formatPrice(price: number): string {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+    }).format(price / 100);
+}
+
+// Or minimal: "$12.34"
+export function formatPrice(cents: number): string {
+    return `$${(cents / 100).toFixed(2)}`;
+}
+```
+
+### Level 2: All config options
+
+You can configure appearance, callbacks, and custom renderers. Full list of props:
 
 ```tsx
 <VendureAiChat
@@ -80,6 +144,7 @@ This renders a floating chat button in the bottom-right corner. Click to open th
         await addToCart(variantId, quantity);
         toast.success(`Added ${productName} to cart`);
     }}
+    onCartUpdate={() => router.refresh()}
     onNavigate={(path) => router.push(path)}
 
     // Custom rendering
@@ -94,6 +159,8 @@ This renders a floating chat button in the bottom-right corner. Click to open th
     className="my-custom-class"
 />
 ```
+
+See [Props Reference](#props-reference) for types and defaults.
 
 ### Level 3: Headless Hook (Full Control)
 
@@ -492,35 +559,19 @@ import { extractDataFromMessage, getMessageText, cn } from '@rahul_vendure/ai-ch
 import type { ChatProduct, ChatCollection, ChatActiveOrder, ExtractedData } from '@rahul_vendure/ai-chat-react';
 ```
 
-## Tailwind CSS Setup (Important)
+## CSS Setup
 
-This component uses Tailwind CSS utility classes. Tailwind only includes classes it finds in your source files — since this package lives in `node_modules`, you **must** tell Tailwind to scan it. Without this, critical classes like `fixed`, `z-[9999]`, `bottom-6` get purged and the chat button will render inline in your layout instead of floating in the bottom-right corner.
+The package ships a pre-compiled CSS file with all the styles the component needs. Import it once in your app:
 
-### Tailwind v4 (`@tailwindcss/postcss`)
-
-If you're using Tailwind v4 with the `@tailwindcss/postcss` plugin, add a `@source` directive in your global CSS file:
-
-```css
-/* globals.css */
-@import "tailwindcss";
-@source "../node_modules/@rahul_vendure/ai-chat-react/dist";
+```tsx
+import '@rahul_vendure/ai-chat-react/styles.css';
 ```
 
-### Tailwind v3 (`tailwind.config.js`)
+That's it — no Tailwind `@source` directives or `content` config needed.
 
-If you're using Tailwind v3 with a config file, add the package to your `content` array:
+The CSS uses CSS variables for theming (see [Theming](#theming)), so it inherits your existing theme if you use shadcn/ui. It does **not** include a CSS reset/preflight, so it won't conflict with your existing styles.
 
-```js
-// tailwind.config.js
-module.exports = {
-    content: [
-        './src/**/*.{js,ts,jsx,tsx}',
-        './node_modules/@rahul_vendure/ai-chat-react/dist/**/*.{js,mjs}',
-    ],
-};
-```
-
-> **Troubleshooting:** If the chat button appears inline in your navbar instead of floating in the corner, this is almost certainly a missing Tailwind content/source config. Add the line above and restart your dev server.
+> **Troubleshooting:** If the chat button appears inline in your navbar instead of floating in the corner, make sure you've imported the CSS file.
 
 ## CORS
 

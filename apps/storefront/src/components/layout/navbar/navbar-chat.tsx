@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
+import '@rahul_vendure/ai-chat-react/styles.css';
 import { formatPrice } from '@/lib/format';
 
 interface NavbarChatProps {

@@ -1,8 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@source "../../../../packages/ai-chat-react/dist";
-
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
