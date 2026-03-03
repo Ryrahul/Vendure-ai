@@ -1,16 +1,15 @@
 import { Logger } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, Order } from '@vendure/core';
 import { formatPrice } from '../../constants';
-
-interface AdminToolResult {
-    summary: string;
-}
+import { ChatResultMapper } from '../chat-result-mapper';
+import type { ToolResult } from '../types';
 
 export class AdminOrderTools {
     private readonly logger = new Logger(AdminOrderTools.name);
 
     constructor(
         private connection: TransactionalConnection,
+        private mapper: ChatResultMapper,
     ) {}
 
     async searchOrders(
@@ -21,7 +20,7 @@ export class AdminOrderTools {
             state?: string;
             take?: number;
         },
-    ): Promise<AdminToolResult> {
+    ): Promise<ToolResult> {
         const take = Math.min(args.take ?? 10, 25);
 
         const orderRepo = this.connection.rawConnection.getRepository(Order);
@@ -29,8 +28,13 @@ export class AdminOrderTools {
             .leftJoinAndSelect('order.customer', 'customer')
             .leftJoinAndSelect('customer.user', 'user')
             .leftJoinAndSelect('order.lines', 'line')
+            .leftJoinAndSelect('line.featuredAsset', 'lineFeaturedAsset')
             .leftJoinAndSelect('line.productVariant', 'variant')
             .leftJoinAndSelect('variant.translations', 'variantTranslation')
+            .leftJoinAndSelect('variant.featuredAsset', 'variantFeaturedAsset')
+            .leftJoinAndSelect('variant.product', 'product')
+            .leftJoinAndSelect('product.featuredAsset', 'productFeaturedAsset')
+            .leftJoinAndSelect('product.translations', 'productTranslation')
             .leftJoinAndSelect('order.fulfillments', 'fulfillment')
             .where('order.active = :active', { active: false });
 
@@ -53,33 +57,29 @@ export class AdminOrderTools {
             const orders = await qb.getMany();
 
             if (orders.length === 0) {
-                return { summary: 'No orders found matching the criteria.' };
+                return { products: [], collections: [], summary: 'No orders found matching the criteria.' };
             }
 
-            const lines = orders.map(o => {
+            const mapped = this.mapper.mapOrders(orders);
+
+            const summaryLines = orders.map(o => {
                 const customer = (o as any).customer;
                 const customerStr = customer
-                    ? `${customer.firstName ?? ''} ${customer.lastName ?? ''} (${customer.emailAddress ?? ''})`.trim()
+                    ? `${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim()
                     : 'Guest';
-                const total = (o as any).totalWithTax ?? (o as any).total ?? 0;
-                const placed = (o as any).orderPlacedAt
-                    ? new Date((o as any).orderPlacedAt).toISOString().split('T')[0]
-                    : 'N/A';
-                const itemCount = ((o as any).lines ?? []).length;
-                const fulfillments = ((o as any).fulfillments ?? []) as any[];
-                const fulfillmentStr = fulfillments.length > 0
-                    ? fulfillments.map((f: any) => f.state).join(', ')
-                    : 'None';
-
-                return `- **${o.code}** | ${o.state} | ${customerStr} | ${formatPrice(total)} | ${placed} | ${itemCount} item(s) | Fulfillment: ${fulfillmentStr}`;
+                const total = (o as any).totalWithTax ?? 0;
+                return `${o.code} (${o.state}, ${customerStr}, ${formatPrice(total)})`;
             });
 
             return {
-                summary: `Found ${orders.length} order(s):\n${lines.join('\n')}`,
+                products: [],
+                collections: [],
+                orders: mapped,
+                summary: `Found ${mapped.length} order(s): ${summaryLines.join('; ')}. Order cards are shown in the UI — keep your text brief.`,
             };
         } catch (e) {
             this.logger.error(`Error searching orders: ${e}`);
-            return { summary: 'Error searching orders. Please try again.' };
+            return { products: [], collections: [], summary: 'Error searching orders. Please try again.' };
         }
     }
 }

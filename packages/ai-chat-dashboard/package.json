@@ -41,7 +41,10 @@
     "@vendure/core": ">=3.0.0",
     "@vendure/dashboard": ">=3.5.0"
   },
-  "dependencies": {},
+  "dependencies": {
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
   "devDependencies": {
     "@vendure/core": "3.5.4",
     "@vendure/dashboard": "3.5.4",
