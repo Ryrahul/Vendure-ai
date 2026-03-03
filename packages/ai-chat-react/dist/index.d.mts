@@ -155,10 +155,16 @@ interface UseVendureChatReturn {
     collections: ChatCollection[];
     /** Active order from the latest assistant response */
     activeOrder: ChatActiveOrder | undefined;
+    /** The conversation ID for this chat session (stable across re-renders) */
+    conversationId: string;
 }
 /**
  * Headless hook for Vendure AI chat.
  * Provides full control over the chat UI while handling transport and data extraction.
+ *
+ * A stable `conversationId` is generated once per hook instance and sent with
+ * every request so the server can cache conversation history instead of
+ * requiring the full message array from the frontend each time.
  */
 declare function useVendureChat(options: UseVendureChatOptions): UseVendureChatReturn;
 

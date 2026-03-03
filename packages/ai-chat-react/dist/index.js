@@ -101,14 +101,28 @@ function getMessageText(message) {
 }
 
 // src/hooks/use-vendure-chat.ts
+function generateId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : r & 3 | 8).toString(16);
+  });
+}
 function useVendureChat(options) {
   const { vendureUrl, authToken, chatEndpoint } = options;
+  const conversationIdRef = (0, import_react.useRef)(generateId());
+  const conversationId = conversationIdRef.current;
   const transport = (0, import_react.useMemo)(
     () => new import_ai.DefaultChatTransport({
       api: chatEndpoint != null ? chatEndpoint : `${vendureUrl.replace(/\/$/, "")}/ai-assistant/stream`,
-      headers: authToken ? () => ({ Authorization: `Bearer ${authToken}` }) : void 0
+      headers: authToken ? () => ({ Authorization: `Bearer ${authToken}` }) : void 0,
+      // Send the conversationId with every request so the server
+      // can look up history from its cache instead of receiving it.
+      body: { conversationId }
     }),
-    [vendureUrl, authToken, chatEndpoint]
+    [vendureUrl, authToken, chatEndpoint, conversationId]
   );
   const { messages, sendMessage: rawSendMessage, status } = (0, import_react2.useChat)({
     id: "vendure-ai-chat",
@@ -130,7 +144,8 @@ function useVendureChat(options) {
     getMessageData: extractDataFromMessage,
     products: latestData.products,
     collections: latestData.collections,
-    activeOrder: latestData.activeOrder
+    activeOrder: latestData.activeOrder,
+    conversationId
   };
 }
 

@@ -17,18 +17,20 @@ exports.AiAssistantController = void 0;
 const common_1 = require("@nestjs/common");
 const core_1 = require("@vendure/core");
 const ai_chat_service_1 = require("../services/ai-chat.service");
+const conversation_cache_service_1 = require("../services/conversation-cache.service");
 /**
  * REST endpoints for the AI shopping assistant.
  * - POST /ai-assistant/chat — non-streaming JSON response (backward compatible)
  * - POST /ai-assistant/stream — streaming response using Vercel AI SDK data stream protocol
  */
 let AiAssistantController = AiAssistantController_1 = class AiAssistantController {
-    constructor(requestContextService, customerService, sessionService, configService, aiChatService) {
+    constructor(requestContextService, customerService, sessionService, configService, aiChatService, conversationCacheService) {
         this.requestContextService = requestContextService;
         this.customerService = customerService;
         this.sessionService = sessionService;
         this.configService = configService;
         this.aiChatService = aiChatService;
+        this.conversationCacheService = conversationCacheService;
         this.logger = new common_1.Logger(AiAssistantController_1.name);
     }
     /**
@@ -99,6 +101,24 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
         return parts.join('\n');
     }
     /**
+     * Resolve conversation history: prefer server-side cache when conversationId
+     * is present, otherwise fall back to the history sent in the request body.
+     */
+    async resolveHistory(body) {
+        var _a;
+        const { message, history: bodyHistory } = this.extractMessageAndHistory(body);
+        const conversationId = body.conversationId;
+        if (conversationId) {
+            // Fetch history from server-side cache
+            const cached = await this.conversationCacheService.getHistory(conversationId);
+            const history = (_a = cached === null || cached === void 0 ? void 0 : cached.messages) !== null && _a !== void 0 ? _a : [];
+            this.logger.log(`[CACHE] Conversation ${conversationId}: ${history.length} cached messages (skipped ${bodyHistory.length} from request body)`);
+            return { message, history, conversationId };
+        }
+        // No conversationId — fall back to history from request body (backward compatible)
+        return { message, history: bodyHistory };
+    }
+    /**
      * Helper: extract auth context from request
      */
     async resolveAuthContext(req) {
@@ -128,7 +148,7 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
      */
     async chat(body, req) {
         const { ctx, customerId } = await this.resolveAuthContext(req);
-        const { message: query, history } = this.extractMessageAndHistory(body);
+        const { message: query, history, conversationId } = await this.resolveHistory(body);
         if (!query) {
             return {
                 message: 'Hi! I\'m your shopping assistant. How can I help you today? You can ask me about products, collections, your orders, or anything about our store.',
@@ -137,6 +157,10 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
             };
         }
         const result = await this.aiChatService.chat(ctx, query, history, customerId);
+        // Cache the new turn if conversationId is present
+        if (conversationId) {
+            await this.conversationCacheService.appendMessages(conversationId, query, result.message, customerId);
+        }
         return {
             message: result.message,
             products: result.products,
@@ -160,7 +184,7 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
     async stream(body, req, res) {
         var _a;
         const { ctx, customerId } = await this.resolveAuthContext(req);
-        const { message: query, history } = this.extractMessageAndHistory(body);
+        const { message: query, history, conversationId } = await this.resolveHistory(body);
         if (!query) {
             res.setHeader('Content-Type', 'application/json');
             res.status(200).json({
@@ -199,6 +223,18 @@ let AiAssistantController = AiAssistantController_1 = class AiAssistantControlle
         else {
             res.end();
         }
+        // Cache the new conversation turn after the stream completes.
+        // We await the full text from the streamResult (which is already
+        // consumed by the stream pipe above, so .text resolves immediately).
+        if (conversationId) {
+            try {
+                const fullText = await streamResult.text;
+                await this.conversationCacheService.appendMessages(conversationId, query, fullText, customerId);
+            }
+            catch (e) {
+                this.logger.error(`Failed to cache conversation turn: ${e}`);
+            }
+        }
     }
 };
 exports.AiAssistantController = AiAssistantController;
@@ -225,6 +261,7 @@ exports.AiAssistantController = AiAssistantController = AiAssistantController_1 
         core_1.CustomerService,
         core_1.SessionService,
         core_1.ConfigService,
-        ai_chat_service_1.AiChatService])
+        ai_chat_service_1.AiChatService,
+        conversation_cache_service_1.ConversationCacheService])
 ], AiAssistantController);
 //# sourceMappingURL=ai-assistant.controller.js.map

@@ -3,6 +3,7 @@ import {
     DefaultJobQueuePlugin,
     DefaultSchedulerPlugin,
     DefaultSearchPlugin,
+    DefaultCachePlugin,
     VendureConfig,
 } from '@vendure/core';
 import { defaultEmailHandlers, EmailPlugin, FileBasedTemplateLoader } from '@vendure/email-plugin';
@@ -91,6 +92,7 @@ export const config: VendureConfig = {
         }),
         DefaultSchedulerPlugin.init(),
         DefaultJobQueuePlugin.init({ useDatabaseForBuffer: true }),
+        DefaultCachePlugin.init({ cacheSize: 10_000 }),
         DefaultSearchPlugin.init({ bufferUpdates: false, indexStockStatus: true }),
         AiAssistantPlugin.init({
             openaiApiKey: process.env.OPENAI_API_KEY ?? '',

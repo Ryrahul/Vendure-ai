@@ -1,9 +1,9 @@
 // src/components/VendureAiChat.tsx
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef as useRef2, useEffect } from "react";
 import { MessageCircle, X, Store, Sparkles, Send, Loader2 as Loader22 } from "lucide-react";
 
 // src/hooks/use-vendure-chat.ts
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 
@@ -56,14 +56,28 @@ function getMessageText(message) {
 }
 
 // src/hooks/use-vendure-chat.ts
+function generateId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : r & 3 | 8).toString(16);
+  });
+}
 function useVendureChat(options) {
   const { vendureUrl, authToken, chatEndpoint } = options;
+  const conversationIdRef = useRef(generateId());
+  const conversationId = conversationIdRef.current;
   const transport = useMemo(
     () => new DefaultChatTransport({
       api: chatEndpoint != null ? chatEndpoint : `${vendureUrl.replace(/\/$/, "")}/ai-assistant/stream`,
-      headers: authToken ? () => ({ Authorization: `Bearer ${authToken}` }) : void 0
+      headers: authToken ? () => ({ Authorization: `Bearer ${authToken}` }) : void 0,
+      // Send the conversationId with every request so the server
+      // can look up history from its cache instead of receiving it.
+      body: { conversationId }
     }),
-    [vendureUrl, authToken, chatEndpoint]
+    [vendureUrl, authToken, chatEndpoint, conversationId]
   );
   const { messages, sendMessage: rawSendMessage, status } = useChat({
     id: "vendure-ai-chat",
@@ -85,7 +99,8 @@ function useVendureChat(options) {
     getMessageData: extractDataFromMessage,
     products: latestData.products,
     collections: latestData.collections,
-    activeOrder: latestData.activeOrder
+    activeOrder: latestData.activeOrder,
+    conversationId
   };
 }
 
@@ -398,8 +413,8 @@ function VendureAiChat({
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [addingToCart, setAddingToCart] = useState(null);
-  const scrollRef = useRef(null);
-  const processedActionsRef = useRef(/* @__PURE__ */ new Set());
+  const scrollRef = useRef2(null);
+  const processedActionsRef = useRef2(/* @__PURE__ */ new Set());
   const { messages, sendMessage, status, isLoading } = useVendureChat({
     vendureUrl,
     authToken,

@@ -20,6 +20,7 @@ const product_embedding_service_1 = require("./services/product-embedding.servic
 const variant_embedding_service_1 = require("./services/variant-embedding.service");
 const collection_embedding_service_1 = require("./services/collection-embedding.service");
 const ai_chat_service_1 = require("./services/ai-chat.service");
+const conversation_cache_service_1 = require("./services/conversation-cache.service");
 const product_embedding_handler_1 = require("./handlers/product-embedding-handler");
 const variant_embedding_handler_1 = require("./handlers/variant-embedding-handler");
 const collection_embedding_handler_1 = require("./handlers/collection-embedding-handler");
@@ -65,6 +66,7 @@ exports.AiAssistantPlugin = AiAssistantPlugin = AiAssistantPlugin_1 = __decorate
             variant_embedding_service_1.VariantEmbeddingService,
             collection_embedding_service_1.CollectionEmbeddingService,
             ai_chat_service_1.AiChatService,
+            conversation_cache_service_1.ConversationCacheService,
             product_embedding_handler_1.ProductEmbeddingHandler,
             variant_embedding_handler_1.VariantEmbeddingHandler,
             collection_embedding_handler_1.CollectionEmbeddingHandler,

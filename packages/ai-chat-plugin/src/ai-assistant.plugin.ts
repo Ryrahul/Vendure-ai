@@ -8,6 +8,7 @@ import { ProductEmbeddingService } from './services/product-embedding.service';
 import { VariantEmbeddingService } from './services/variant-embedding.service';
 import { CollectionEmbeddingService } from './services/collection-embedding.service';
 import { AiChatService } from './services/ai-chat.service';
+import { ConversationCacheService } from './services/conversation-cache.service';
 import { ProductEmbeddingHandler } from './handlers/product-embedding-handler';
 import { VariantEmbeddingHandler } from './handlers/variant-embedding-handler';
 import { CollectionEmbeddingHandler } from './handlers/collection-embedding-handler';
@@ -38,6 +39,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel'>>
         VariantEmbeddingService,
         CollectionEmbeddingService,
         AiChatService,
+        ConversationCacheService,
         ProductEmbeddingHandler,
         VariantEmbeddingHandler,
         CollectionEmbeddingHandler,

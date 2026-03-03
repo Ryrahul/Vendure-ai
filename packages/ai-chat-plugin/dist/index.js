@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AiAssistantController = exports.EMBED_ALL_QUEUE_NAME = exports.AI_ASSISTANT_OPTIONS = exports.AiChatService = exports.CollectionEmbeddingService = exports.VariantEmbeddingService = exports.ProductEmbeddingService = exports.EmbeddingService = exports.CollectionEmbedding = exports.VariantEmbedding = exports.ProductEmbedding = exports.AiAssistantPlugin = void 0;
+exports.AiAssistantController = exports.EMBED_ALL_QUEUE_NAME = exports.AI_ASSISTANT_OPTIONS = exports.ConversationCacheService = exports.AiChatService = exports.CollectionEmbeddingService = exports.VariantEmbeddingService = exports.ProductEmbeddingService = exports.EmbeddingService = exports.CollectionEmbedding = exports.VariantEmbedding = exports.ProductEmbedding = exports.AiAssistantPlugin = void 0;
 var ai_assistant_plugin_1 = require("./ai-assistant.plugin");
 Object.defineProperty(exports, "AiAssistantPlugin", { enumerable: true, get: function () { return ai_assistant_plugin_1.AiAssistantPlugin; } });
 var product_embedding_entity_1 = require("./entities/product-embedding.entity");
@@ -19,6 +19,8 @@ var collection_embedding_service_1 = require("./services/collection-embedding.se
 Object.defineProperty(exports, "CollectionEmbeddingService", { enumerable: true, get: function () { return collection_embedding_service_1.CollectionEmbeddingService; } });
 var ai_chat_service_1 = require("./services/ai-chat.service");
 Object.defineProperty(exports, "AiChatService", { enumerable: true, get: function () { return ai_chat_service_1.AiChatService; } });
+var conversation_cache_service_1 = require("./services/conversation-cache.service");
+Object.defineProperty(exports, "ConversationCacheService", { enumerable: true, get: function () { return conversation_cache_service_1.ConversationCacheService; } });
 var constants_1 = require("./constants");
 Object.defineProperty(exports, "AI_ASSISTANT_OPTIONS", { enumerable: true, get: function () { return constants_1.AI_ASSISTANT_OPTIONS; } });
 Object.defineProperty(exports, "EMBED_ALL_QUEUE_NAME", { enumerable: true, get: function () { return constants_1.EMBED_ALL_QUEUE_NAME; } });
