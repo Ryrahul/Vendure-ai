@@ -1,6 +1,6 @@
 # @rahul_vendure/ai-chat-react
 
-Drop-in AI shopping assistant React component for [Vendure](https://www.vendure.io/) stores. Renders a floating chat panel with product cards, collection badges, cart summary, and quick actions — all powered by the [`@rahul_vendure/ai-chat-plugin`](../ai-chat-plugin) backend.
+Drop-in AI shopping assistant React component for [Vendure](https://www.vendure.io/) stores. Renders a floating chat panel with product cards, collection badges, cart summary, and quick actions — all powered by the [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) backend.
 
 Styled with **Tailwind CSS** utility classes. Works with any React framework (Next.js, Remix, Vite, CRA, etc.).
 
@@ -21,7 +21,7 @@ Styled with **Tailwind CSS** utility classes. Works with any React framework (Ne
 
 - React `>=18`
 - Tailwind CSS `>=3.0` (the component uses Tailwind utility classes)
-- A Vendure server with [`@rahul_vendure/ai-chat-plugin`](../ai-chat-plugin) installed
+- A Vendure server with [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) installed
 
 ## Installation
 
@@ -212,43 +212,229 @@ The component uses Tailwind utility classes that reference CSS variables followi
 
 You can customize the component's look by changing these CSS variables in your Tailwind config.
 
-## Framework Examples
+## Authentication
 
-### Next.js App Router
+The `authToken` prop is **optional**. Without it, the chat works in anonymous mode — users can search products, browse collections, and filter by price.
+
+To unlock authenticated features (cart management, order history, order tracking, checkout), pass the Vendure session token:
+
+| Feature | Anonymous | Authenticated |
+|---------|-----------|---------------|
+| Product search | Yes | Yes |
+| Vector/semantic search | Yes | Yes |
+| Browse collections | Yes | Yes |
+| Filter by price | Yes | Yes |
+| Add to cart | No | Yes |
+| View cart | No | Yes |
+| Order history | No | Yes |
+| Track orders | No | Yes |
+| Checkout flow | No | Yes |
+
+### How it works
+
+When a customer logs in to your Vendure storefront, Vendure returns a session token. You store this token (typically in an HTTP-only cookie), then pass it to `<VendureAiChat>` as the `authToken` prop. The component sends it as an `Authorization: Bearer <token>` header with every chat request, and the backend resolves the customer session to enable personalized tools.
+
+### Next.js App Router (recommended pattern)
+
+The token must flow from a **server component** (which can read cookies) to the **client component** (which renders the chat). Here's the full pattern:
+
+**1. Auth helper** — read/write the Vendure session token from cookies:
+
+```ts
+// lib/auth.ts
+import { cookies } from 'next/headers';
+
+const AUTH_TOKEN_COOKIE = 'vendure-auth-token';
+
+export async function getAuthToken(): Promise<string | undefined> {
+    const cookieStore = await cookies();
+    return cookieStore.get(AUTH_TOKEN_COOKIE)?.value;
+}
+
+export async function setAuthToken(token: string) {
+    const cookieStore = await cookies();
+    cookieStore.set(AUTH_TOKEN_COOKIE, token);
+}
+```
+
+> Set this cookie when the customer logs in (e.g. after calling the `login` mutation on the Vendure Shop API, store the returned token with `setAuthToken(token)`).
+
+**2. Client component** — wraps `<VendureAiChat>` (must be a client component since it uses hooks):
 
 ```tsx
-// app/layout.tsx
+// components/storefront-chat.tsx
+'use client';
 import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
 
-export default function Layout({ children }) {
+interface StorefrontChatProps {
+    vendureUrl: string;
+    authToken?: string;
+}
+
+export function StorefrontChat({ vendureUrl, authToken }: StorefrontChatProps) {
+    return (
+        <VendureAiChat
+            vendureUrl={vendureUrl}
+            authToken={authToken}
+            onNavigate={(path) => { window.location.href = path; }}
+        />
+    );
+}
+```
+
+**3. Server component** — reads the token from cookies and passes it down:
+
+```tsx
+// app/layout.tsx (or any server component like a Navbar)
+import { getAuthToken } from '@/lib/auth';
+import { StorefrontChat } from '@/components/storefront-chat';
+
+const VENDURE_URL = process.env.VENDURE_SHOP_API_URL!.replace(/\/shop-api\/?$/, '');
+
+export default async function Layout({ children }) {
+    const authToken = await getAuthToken();
+
     return (
         <html>
             <body>
                 {children}
-                <VendureAiChat
-                    vendureUrl={process.env.NEXT_PUBLIC_VENDURE_URL!}
-                    onNavigate={(path) => { window.location.href = path; }}
-                />
+                <StorefrontChat vendureUrl={VENDURE_URL} authToken={authToken} />
             </body>
         </html>
     );
 }
 ```
 
+This pattern ensures the token is read server-side (secure, no exposure to client JS) and passed as a prop to the chat component. If the chat lives in a child (e.g. Navbar) that is not async, use the [wrapper pattern below](#chat-in-navbar-or-other-non-async-parent).
+
+#### Chat in Navbar (or other non-async parent)
+
+If the component that should render the chat (e.g. your Navbar) is **not** an async server component, use a small **async wrapper** that fetches the token and renders the client chat. Wrap the wrapper in `<Suspense>` to avoid errors.
+
+**1. Auth helper** — same as above, e.g. in `lib/auth.ts`:
+
+```ts
+// lib/auth.ts
+import { cookies } from 'next/headers';
+
+const AUTH_TOKEN_COOKIE = process.env.VENDURE_AUTH_TOKEN_COOKIE || 'vendure-auth-token';
+
+export async function getAuthToken(): Promise<string | undefined> {
+    const cookieStore = await cookies();
+    return cookieStore.get(AUTH_TOKEN_COOKIE)?.value;
+}
+```
+
+**2. Async server wrapper** — fetches the token and passes it to the client chat:
+
+```tsx
+// components/layout/navbar/navbar-chat-with-auth.tsx
+import { getAuthToken } from '@/lib/auth';
+import { NavbarChat } from './navbar-chat';
+
+interface NavbarChatWithAuthProps {
+    vendureUrl: string;
+}
+
+export async function NavbarChatWithAuth({ vendureUrl }: NavbarChatWithAuthProps) {
+    const authToken = await getAuthToken();
+    return <NavbarChat vendureUrl={vendureUrl} authToken={authToken} />;
+}
+```
+
+**3. Client component** — wraps `<VendureAiChat>` with your callbacks (e.g. add-to-cart, navigation, formatting):
+
+```tsx
+// components/layout/navbar/navbar-chat.tsx
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
+import { formatPrice } from '@/lib/format';
+
+interface NavbarChatProps {
+    vendureUrl: string;
+    authToken?: string;
+}
+
+export function NavbarChat({ vendureUrl, authToken }: NavbarChatProps) {
+    const router = useRouter();
+
+    return (
+        <VendureAiChat
+            vendureUrl={vendureUrl}
+            authToken={authToken}
+            formatPrice={formatPrice}
+            position="bottom-right"
+            onCartUpdate={() => router.refresh()}
+            onAddToCart={async (variantId, quantity, productName) => {
+                const { addToCart } = await import('@/app/product/[slug]/actions');
+                const result = await addToCart(variantId, quantity);
+                if (result.success) {
+                    toast.success('Added to cart', {
+                        description: `${productName} has been added to your cart`,
+                    });
+                    router.refresh();
+                } else {
+                    toast.error('Error', {
+                        description: result.error || 'Failed to add item to cart',
+                    });
+                }
+            }}
+            onNavigate={(path) => router.push(path)}
+        />
+    );
+}
+```
+
+**4. Use the wrapper in your Navbar** — keep the Navbar as a regular (sync) component and wrap the chat in `Suspense`:
+
+```tsx
+// components/layout/navbar.tsx
+import { NavbarChatWithAuth } from '@/components/layout/navbar/navbar-chat-with-auth';
+import { Suspense } from 'react';
+
+
+export function Navbar() {
+    return (
+        <header>
+            {/* ... other navbar content ... */}
+            <Suspense>
+                <NavbarChatWithAuth vendureUrl={VENDURE_BASE_URL} />
+            </Suspense>
+        </header>
+    );
+}
+```
+
+Using the async wrapper + `Suspense` keeps the token on the server and avoids making the whole Navbar async.
+
 ### Remix
 
 ```tsx
 // app/root.tsx
 import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
+import { useLoaderData, useNavigate } from '@remix-run/react';
+import type { LoaderFunctionArgs } from '@remix-run/node';
+
+export async function loader({ request }: LoaderFunctionArgs) {
+    const cookie = request.headers.get('Cookie') ?? '';
+    const authToken = cookie.match(/vendure-auth-token=([^;]+)/)?.[1];
+    return { authToken };
+}
 
 export default function App() {
+    const { authToken } = useLoaderData<typeof loader>();
     const navigate = useNavigate();
+
     return (
         <html>
             <body>
                 <Outlet />
                 <VendureAiChat
                     vendureUrl="https://my-vendure.com"
+                    authToken={authToken}
                     onNavigate={(path) => navigate(path)}
                 />
             </body>
@@ -257,16 +443,21 @@ export default function App() {
 }
 ```
 
-### Plain Vite React
+### Plain Vite / CRA (client-side only)
+
+If you don't have a server component layer, read the token from wherever you store it (localStorage, cookie, auth context):
 
 ```tsx
 import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
 
 function App() {
+    // Read from wherever your app stores the Vendure session token
+    const authToken = localStorage.getItem('vendure-auth-token') ?? undefined;
+
     return (
         <div>
             <h1>My Store</h1>
-            <VendureAiChat vendureUrl="https://my-vendure.com" />
+            <VendureAiChat vendureUrl="https://my-vendure.com" authToken={authToken} />
         </div>
     );
 }
@@ -301,9 +492,23 @@ import { extractDataFromMessage, getMessageText, cn } from '@rahul_vendure/ai-ch
 import type { ChatProduct, ChatCollection, ChatActiveOrder, ExtractedData } from '@rahul_vendure/ai-chat-react';
 ```
 
-## Tailwind Content Config
+## Tailwind CSS Setup (Important)
 
-Make sure the package is included in your Tailwind content paths so the utility classes aren't purged:
+This component uses Tailwind CSS utility classes. Tailwind only includes classes it finds in your source files — since this package lives in `node_modules`, you **must** tell Tailwind to scan it. Without this, critical classes like `fixed`, `z-[9999]`, `bottom-6` get purged and the chat button will render inline in your layout instead of floating in the bottom-right corner.
+
+### Tailwind v4 (`@tailwindcss/postcss`)
+
+If you're using Tailwind v4 with the `@tailwindcss/postcss` plugin, add a `@source` directive in your global CSS file:
+
+```css
+/* globals.css */
+@import "tailwindcss";
+@source "../node_modules/@rahul_vendure/ai-chat-react/dist";
+```
+
+### Tailwind v3 (`tailwind.config.js`)
+
+If you're using Tailwind v3 with a config file, add the package to your `content` array:
 
 ```js
 // tailwind.config.js
@@ -314,6 +519,8 @@ module.exports = {
     ],
 };
 ```
+
+> **Troubleshooting:** If the chat button appears inline in your navbar instead of floating in the corner, this is almost certainly a missing Tailwind content/source config. Add the line above and restart your dev server.
 
 ## CORS
 

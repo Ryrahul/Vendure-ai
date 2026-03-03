@@ -157,7 +157,7 @@ function OrderCard({ order }: { order: Order }) {
     const date = order.orderPlacedAt ? new Date(order.orderPlacedAt).toLocaleDateString() : 'N/A';
     const stateColor = order.state === 'PaymentSettled' ? '#22c55e' : order.state === 'Cancelled' ? '#ef4444' : '#6366f1';
     return (
-        <div className="ac-ocard" onClick={() => window.open(`/dashboard/orders/${order.id}`, '_blank')}>
+        <div className="ac-ocard" onClick={() => window.open(`/dashboard/orders/${order.id}`, '_self')}>
             <div className="ac-ocard-header">
                 <span className="ac-ocard-code">{order.code}</span>
                 <span className="ac-ocard-state" style={{ background: stateColor }}>{order.state}</span>

@@ -1,20 +1,8 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import type { UseVendureChatOptions, ChatProduct, ChatCollection, ChatActiveOrder, ExtractedData } from '../types';
 import { extractDataFromMessage, getMessageText } from '../utils/extract-data';
-
-/** Generate a UUID v4 using the Web Crypto API (available in all modern browsers & Node 19+). */
-function generateId(): string {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return crypto.randomUUID();
-    }
-    // Fallback for older environments
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = (Math.random() * 16) | 0;
-        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-    });
-}
 
 export interface UseVendureChatReturn {
     /** All chat messages */
@@ -50,10 +38,11 @@ export interface UseVendureChatReturn {
 export function useVendureChat(options: UseVendureChatOptions): UseVendureChatReturn {
     const { vendureUrl, authToken, chatEndpoint } = options;
 
-    // Generate a stable conversationId once per hook mount.
-    // useRef ensures the ID survives re-renders without changing.
-    const conversationIdRef = useRef<string>(generateId());
-    const conversationId = conversationIdRef.current;
+    // Use React's useId() for a deterministic, SSR-safe ID.
+    // This avoids Next.js 16's strict prerendering checks that reject
+    // Math.random() and crypto.randomUUID() in client components.
+    const reactId = useId();
+    const conversationId = reactId;
 
     const transport = useMemo(
         () =>

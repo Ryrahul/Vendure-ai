@@ -68,7 +68,7 @@ This generates vector embeddings for all products, variants, and collections in 
 
 ### 3. Add the frontend
 
-Use the companion package [`@rahul_vendure/ai-chat-react`](../ai-chat-react) for a drop-in React chat UI:
+Use the companion package [`@rahul_vendure/ai-chat-react`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-react) for a drop-in React chat UI:
 
 ```bash
 npm install @rahul_vendure/ai-chat-react ai @ai-sdk/react
@@ -78,7 +78,7 @@ npm install @rahul_vendure/ai-chat-react ai @ai-sdk/react
 <VendureAiChat vendureUrl="https://my-vendure.com" />
 ```
 
-See the [`@rahul_vendure/ai-chat-react` README](../ai-chat-react) for full docs.
+See the [`@rahul_vendure/ai-chat-react` README](https://www.npmjs.com/package/@rahul_vendure/ai-chat-react) for full docs.
 
 ## Configuration Options
 
@@ -173,13 +173,35 @@ The plugin adds three entities to your database:
 
 These are automatically managed. The plugin creates the pgvector extension and embedding columns on startup.
 
+## Admin Dashboard AI Chat
+
+The plugin also includes a built-in admin chat endpoint at `POST /admin-ai-chat/chat` with admin-specific tools:
+
+| Tool | Description |
+|------|-------------|
+| `searchProducts` | Keyword search with admin details (stock levels, enabled status, variant count) |
+| `vectorSearch` | Semantic search for products by intent |
+| `getProductDetails` | Full product details with all variants, SKUs, stock |
+| `searchOrders` | Search orders by code, customer, or state |
+| `searchCustomers` | Search customers by name/email with order stats |
+| `getCollections` | List/search collections with product counts |
+
+To add the admin chat UI to your Vendure dashboard, install the companion package:
+
+```bash
+npm install @rahul_vendure/ai-chat-dashboard
+```
+
+See the [`@rahul_vendure/ai-chat-dashboard` README](https://www.npmjs.com/package/@rahul_vendure/ai-chat-dashboard) for setup instructions.
+
 ## Exported Services
 
 For advanced use cases, you can inject these services in your own plugins:
 
 ```ts
 import {
-    AiChatService,
+    AiChatService,          // Storefront chat service
+    AdminAiChatService,     // Admin dashboard chat service
     EmbeddingService,
     ProductEmbeddingService,
     VariantEmbeddingService,
