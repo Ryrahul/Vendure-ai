@@ -229,6 +229,11 @@ export class AiChatService implements OnModuleInit {
                 }),
                 execute: async (params) => this.checkoutTools.setBillingAddress(ctx, params),
             }),
+            getEligiblePaymentMethods: tool({
+                description: 'Get available payment methods for the active order. Use this when the customer asks how they can pay or wants to proceed to checkout.',
+                inputSchema: z.object({}),
+                execute: async () => this.checkoutTools.getEligiblePaymentMethods(ctx),
+            }),
             setShippingMethod: tool({
                 description: 'Set the chosen shipping method on the active order. Use the id from getEligibleShippingMethods.',
                 inputSchema: z.object({

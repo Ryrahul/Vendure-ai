@@ -55,7 +55,29 @@ export function ChatMessage({
             >
                 {message.role === 'assistant' && text ? (
                     <div className="chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs">
-                        <ReactMarkdown>{text}</ReactMarkdown>
+                        <ReactMarkdown
+                            components={{
+                                a: ({ href, children, ...props }) => {
+                                    // Intercept internal links (e.g. /checkout, /product/...)
+                                    // and route through onNavigate for client-side navigation
+                                    const isInternal = href && href.startsWith('/');
+                                    return (
+                                        <a
+                                            href={href}
+                                            {...props}
+                                            onClick={(e) => {
+                                                if (isInternal && onNavigate) {
+                                                    e.preventDefault();
+                                                    onNavigate(href);
+                                                }
+                                            }}
+                                        >
+                                            {children}
+                                        </a>
+                                    );
+                                },
+                            }}
+                        >{text}</ReactMarkdown>
                     </div>
                 ) : message.role === 'user' ? (
                     <p className="whitespace-pre-wrap">{text}</p>

@@ -194,6 +194,11 @@ let AiChatService = AiChatService_1 = class AiChatService {
                 }),
                 execute: async (params) => this.checkoutTools.setBillingAddress(ctx, params),
             }),
+            getEligiblePaymentMethods: (0, ai_1.tool)({
+                description: 'Get available payment methods for the active order. Use this when the customer asks how they can pay or wants to proceed to checkout.',
+                inputSchema: zod_1.z.object({}),
+                execute: async () => this.checkoutTools.getEligiblePaymentMethods(ctx),
+            }),
             setShippingMethod: (0, ai_1.tool)({
                 description: 'Set the chosen shipping method on the active order. Use the id from getEligibleShippingMethods.',
                 inputSchema: zod_1.z.object({

@@ -72,6 +72,39 @@ export class CheckoutTools {
         }
     }
 
+    async getEligiblePaymentMethods(
+        ctx: RequestContext,
+    ): Promise<ToolResult> {
+        if (!ctx.activeUserId) {
+            return { products: [], collections: [], summary: 'Error: You must be logged in to view payment methods.' };
+        }
+        try {
+            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            if (!order) {
+                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+            }
+            const methods = await this.orderService.getEligiblePaymentMethods(ctx, order.id);
+            const mapped = methods.map((m: any) => ({
+                id: String(m.id),
+                name: String(m.name ?? ''),
+                code: String(m.code ?? ''),
+                description: String(m.description ?? ''),
+                isEligible: Boolean(m.isEligible),
+            }));
+            const eligible = mapped.filter(m => m.isEligible);
+            return {
+                products: [],
+                collections: [],
+                summary: eligible.length > 0
+                    ? `Available payment methods: ${eligible.map(m => `"${m.name}" (code: ${m.code}${m.description ? ', ' + m.description : ''})`).join(', ')}`
+                    : 'No payment methods available for this order.',
+            };
+        } catch (e) {
+            this.logger.error(`Error fetching payment methods: ${e}`);
+            return { products: [], collections: [], summary: 'Error fetching payment methods.' };
+        }
+    }
+
     async setShippingAddress(
         ctx: RequestContext,
         params: {

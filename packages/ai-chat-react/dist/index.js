@@ -393,7 +393,31 @@ function ChatMessage({
         isUser ? "bg-primary text-primary-foreground" : "bg-muted"
       ),
       children: [
-        message.role === "assistant" && text ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_react_markdown.default, { children: text }) }) : message.role === "user" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "whitespace-pre-wrap", children: text }) : null,
+        message.role === "assistant" && text ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          import_react_markdown.default,
+          {
+            components: {
+              a: ({ href, children, ...props }) => {
+                const isInternal = href && href.startsWith("/");
+                return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "a",
+                  {
+                    href,
+                    ...props,
+                    onClick: (e) => {
+                      if (isInternal && onNavigate) {
+                        e.preventDefault();
+                        onNavigate(href);
+                      }
+                    },
+                    children
+                  }
+                );
+              }
+            },
+            children: text
+          }
+        ) }) : message.role === "user" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "whitespace-pre-wrap", children: text }) : null,
         data && data.collections.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "mt-2 flex flex-wrap gap-1.5", children: data.collections.map(
           (c) => renderCollection ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_react3.default.Fragment, { children: renderCollection(c) }, c.id) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CollectionBadge, { collection: c, onNavigate }, c.id)
         ) }),

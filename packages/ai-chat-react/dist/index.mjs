@@ -348,7 +348,31 @@ function ChatMessage({
         isUser ? "bg-primary text-primary-foreground" : "bg-muted"
       ),
       children: [
-        message.role === "assistant" && text ? /* @__PURE__ */ jsx5("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ jsx5(ReactMarkdown, { children: text }) }) : message.role === "user" ? /* @__PURE__ */ jsx5("p", { className: "whitespace-pre-wrap", children: text }) : null,
+        message.role === "assistant" && text ? /* @__PURE__ */ jsx5("div", { className: "chat-markdown max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-4 [&_ol]:list-decimal [&_li]:my-0.5 [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_strong]:font-semibold [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_img]:hidden [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs", children: /* @__PURE__ */ jsx5(
+          ReactMarkdown,
+          {
+            components: {
+              a: ({ href, children, ...props }) => {
+                const isInternal = href && href.startsWith("/");
+                return /* @__PURE__ */ jsx5(
+                  "a",
+                  {
+                    href,
+                    ...props,
+                    onClick: (e) => {
+                      if (isInternal && onNavigate) {
+                        e.preventDefault();
+                        onNavigate(href);
+                      }
+                    },
+                    children
+                  }
+                );
+              }
+            },
+            children: text
+          }
+        ) }) : message.role === "user" ? /* @__PURE__ */ jsx5("p", { className: "whitespace-pre-wrap", children: text }) : null,
         data && data.collections.length > 0 && /* @__PURE__ */ jsx5("div", { className: "mt-2 flex flex-wrap gap-1.5", children: data.collections.map(
           (c) => renderCollection ? /* @__PURE__ */ jsx5(React.Fragment, { children: renderCollection(c) }, c.id) : /* @__PURE__ */ jsx5(CollectionBadge, { collection: c, onNavigate }, c.id)
         ) }),
