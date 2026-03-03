@@ -13,6 +13,7 @@ import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import 'dotenv/config';
 import path from 'path';
 import { AiAssistantPlugin } from '@rahul_vendure/ai-chat-plugin';
+import { AiChatDashboardPlugin } from '@rahul_vendure/ai-chat-dashboard';
 
 const IS_DEV = process.env.APP_ENV === 'dev';
 const serverPort = +process.env.PORT || 3000;
@@ -115,6 +116,7 @@ export const config: VendureConfig = {
                 changeEmailAddressUrl: 'http://localhost:8080/verify-email-address-change'
             },
         }),
+        AiChatDashboardPlugin,
         DashboardPlugin.init({
             route: 'dashboard',
             appDir: IS_DEV

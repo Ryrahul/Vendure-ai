@@ -16,6 +16,8 @@ export type { SimilarVariantResult } from './services/variant-embedding.service'
 export type { SimilarCollectionResult } from './services/collection-embedding.service';
 export { AI_ASSISTANT_OPTIONS, EMBED_ALL_QUEUE_NAME } from './constants';
 export { AiAssistantController } from './controllers/ai-assistant.controller';
+export { AdminChatController } from './controllers/admin-chat.controller';
+export type { AdminChatRequest, AdminChatResponse } from './controllers/admin-chat.controller';
 export type {
     AiChatRequest,
     AiChatResponse,

@@ -15,6 +15,7 @@ import { CollectionEmbeddingHandler } from './handlers/collection-embedding-hand
 import { EmbedAllJobService } from './services/embed-all-job.service';
 import { AiAssistantResolver } from './api/ai-assistant.resolver';
 import { AiAssistantController } from './controllers/ai-assistant.controller';
+import { AdminChatController } from './controllers/admin-chat.controller';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from './constants';
 import { embedAllSchemaExtension } from './api/schema-extensions';
 
@@ -32,7 +33,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         schema: () => embedAllSchemaExtension,
         resolvers: [AiAssistantResolver],
     },
-    controllers: [AiAssistantController],
+    controllers: [AiAssistantController, AdminChatController],
     providers: [
         { provide: AI_ASSISTANT_OPTIONS, useFactory: () => AiAssistantPlugin.options },
         EmbeddingService,
