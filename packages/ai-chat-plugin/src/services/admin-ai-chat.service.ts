@@ -13,6 +13,14 @@ import { AdminProductTools } from './admin-tools/admin-product-tools';
 import { AdminOrderTools } from './admin-tools/admin-order-tools';
 import { AdminCustomerTools } from './admin-tools/admin-customer-tools';
 import { AdminCollectionTools } from './admin-tools/admin-collection-tools';
+import { AdminShippingTools } from './admin-tools/admin-shipping-tools';
+import { AdminPaymentTools } from './admin-tools/admin-payment-tools';
+import { AdminTaxTools } from './admin-tools/admin-tax-tools';
+import { AdminFacetTools } from './admin-tools/admin-facet-tools';
+import { AdminSettingsTools } from './admin-tools/admin-settings-tools';
+import { AdminStaffTools } from './admin-tools/admin-staff-tools';
+import { AdminPromotionTools } from './admin-tools/admin-promotion-tools';
+import { AdminCountryTools } from './admin-tools/admin-country-tools';
 import { ADMIN_SYSTEM_PROMPT } from './admin-system-prompt';
 import type { AiChatProduct, AiChatCollection, AiChatOrder } from './types';
 
@@ -35,6 +43,14 @@ export class AdminAiChatService implements OnModuleInit {
     private orderTools!: AdminOrderTools;
     private customerTools!: AdminCustomerTools;
     private collectionTools!: AdminCollectionTools;
+    private shippingTools!: AdminShippingTools;
+    private paymentTools!: AdminPaymentTools;
+    private taxTools!: AdminTaxTools;
+    private facetTools!: AdminFacetTools;
+    private settingsTools!: AdminSettingsTools;
+    private staffTools!: AdminStaffTools;
+    private promotionTools!: AdminPromotionTools;
+    private countryTools!: AdminCountryTools;
 
     constructor(
         @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
@@ -84,6 +100,14 @@ export class AdminAiChatService implements OnModuleInit {
         this.orderTools = new AdminOrderTools(this.connection, this.mapper);
         this.customerTools = new AdminCustomerTools(this.connection);
         this.collectionTools = new AdminCollectionTools(this.connection);
+        this.shippingTools = new AdminShippingTools(this.connection);
+        this.paymentTools = new AdminPaymentTools(this.connection);
+        this.taxTools = new AdminTaxTools(this.connection);
+        this.facetTools = new AdminFacetTools(this.connection);
+        this.settingsTools = new AdminSettingsTools(this.connection);
+        this.staffTools = new AdminStaffTools(this.connection);
+        this.promotionTools = new AdminPromotionTools(this.connection);
+        this.countryTools = new AdminCountryTools(this.connection);
     }
 
     private buildTools(ctx: RequestContext): ToolSet {
@@ -137,6 +161,119 @@ export class AdminAiChatService implements OnModuleInit {
                     take: z.number().optional().describe('Number of results (default 20, max 50)'),
                 }),
                 execute: async (args) => this.collectionTools.getCollections(ctx, args),
+            }),
+            getShippingMethods: tool({
+                description: 'List all shipping methods configured in the store. Shows code, fulfillment handler, and channel assignments.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by name or code'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                    includeDeleted: z.boolean().optional().describe('Include soft-deleted shipping methods (default false)'),
+                }),
+                execute: async (args) => this.shippingTools.getShippingMethods(ctx, args),
+            }),
+            getPaymentMethods: tool({
+                description: 'List all payment methods configured in the store. Shows handler, enabled status, and channel assignments.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by name or code'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.paymentTools.getPaymentMethods(ctx, args),
+            }),
+            getTaxRates: tool({
+                description: 'List tax rates with their categories and zones. Shows rate percentage, enabled status, and associated zone/category.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by name, category, or zone'),
+                    take: z.number().optional().describe('Number of results (default 30, max 100)'),
+                }),
+                execute: async (args) => this.taxTools.getTaxRates(ctx, args),
+            }),
+            getTaxCategories: tool({
+                description: 'List tax categories (e.g. Standard, Reduced, Zero-rated).',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by name'),
+                    take: z.number().optional().describe('Number of results (default 30, max 50)'),
+                }),
+                execute: async (args) => this.taxTools.getTaxCategories(ctx, args),
+            }),
+            getZones: tool({
+                description: 'List tax/shipping zones with their member countries/regions.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by zone name'),
+                    take: z.number().optional().describe('Number of results (default 30, max 50)'),
+                }),
+                execute: async (args) => this.taxTools.getZones(ctx, args),
+            }),
+            getFacets: tool({
+                description: 'List product facets (attributes like Color, Size, Brand) with their values. Useful for understanding product categorization.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by facet name or code'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.facetTools.getFacets(ctx, args),
+            }),
+            getFacetValues: tool({
+                description: 'List facet values, optionally filtered by facet ID. E.g. for a "Color" facet: Red, Blue, Green.',
+                inputSchema: z.object({
+                    facetId: z.string().optional().describe('Filter values to a specific facet by ID'),
+                    query: z.string().optional().describe('Optional search term to filter by value name or code'),
+                    take: z.number().optional().describe('Number of results (default 30, max 100)'),
+                }),
+                execute: async (args) => this.facetTools.getFacetValues(ctx, args),
+            }),
+            getGlobalSettings: tool({
+                description: 'Get global store settings including inventory tracking, out-of-stock threshold, and available languages.',
+                inputSchema: z.object({}),
+                execute: async () => this.settingsTools.getGlobalSettings(ctx),
+            }),
+            getChannels: tool({
+                description: 'List all sales channels with their currency, language, tax zone, shipping zone, and seller configuration.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by channel code or description'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.settingsTools.getChannels(ctx, args),
+            }),
+            getSellers: tool({
+                description: 'List sellers (marketplace vendors) in the store.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by seller name'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.settingsTools.getSellers(ctx, args),
+            }),
+            getAdministrators: tool({
+                description: 'List admin users with their roles and email addresses.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by name or email'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.staffTools.getAdministrators(ctx, args),
+            }),
+            getRoles: tool({
+                description: 'List admin roles with their permissions and channel assignments.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by role code or description'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.staffTools.getRoles(ctx, args),
+            }),
+            getPromotions: tool({
+                description: 'List promotions/discounts with their coupon codes, conditions, actions, and date ranges.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by name or coupon code'),
+                    activeOnly: z.boolean().optional().describe('Only show currently active promotions (default false)'),
+                    take: z.number().optional().describe('Number of results (default 20, max 50)'),
+                }),
+                execute: async (args) => this.promotionTools.getPromotions(ctx, args),
+            }),
+            getCountries: tool({
+                description: 'List countries configured in the store with their codes and enabled status.',
+                inputSchema: z.object({
+                    query: z.string().optional().describe('Optional search term to filter by country name or code'),
+                    enabledOnly: z.boolean().optional().describe('Only show enabled countries (default false)'),
+                    take: z.number().optional().describe('Number of results (default 30, max 100)'),
+                }),
+                execute: async (args) => this.countryTools.getCountries(ctx, args),
             }),
         };
     }
