@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/server/**'
       - 'packages/ai-chat-plugin/**'
+      - 'packages/ai-chat-dashboard/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/deploy-backend.yml'
@@ -31,6 +32,9 @@ jobs:
       - name: Build ai-chat-plugin
         run: npm run build -w @rahul_vendure/ai-chat-plugin
 
+      - name: Build ai-chat-dashboard
+        run: npm run build -w @rahul_vendure/ai-chat-dashboard
+
       - name: Build backend
         run: npm run build -w server
 
@@ -45,6 +49,9 @@ jobs:
             apps/server/package.json \
             packages/ai-chat-plugin/dist \
             packages/ai-chat-plugin/package.json \
+            packages/ai-chat-dashboard/dist \
+            packages/ai-chat-dashboard/src/dashboard \
+            packages/ai-chat-dashboard/package.json \
             package.json \
             package-lock.json
 
