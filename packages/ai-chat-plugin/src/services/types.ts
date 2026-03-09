@@ -97,6 +97,25 @@ export interface SetShippingMethodAction {
     shippingMethodId: string;
 }
 
+/** A promotion available to the customer */
+export interface AiPromotion {
+    id: string;
+    name: string;
+    description: string;
+    couponCode?: string;
+    startsAt?: string;
+    endsAt?: string;
+    perCustomerUsageLimit?: number;
+    conditions?: string[];
+    discountSummary?: string;
+}
+
+/** Action signal for applying/removing a coupon code */
+export interface ApplyCouponAction {
+    couponCode: string;
+    applied: boolean;
+}
+
 export interface ChatResult {
     message: string;
     products: AiChatProduct[];
@@ -107,6 +126,8 @@ export interface ChatResult {
     setShippingAddressAction?: SetShippingAddressAction;
     setBillingAddressAction?: SetBillingAddressAction;
     setShippingMethodAction?: SetShippingMethodAction;
+    promotions?: AiPromotion[];
+    applyCouponAction?: ApplyCouponAction;
 }
 
 /** Result type for streaming chat — returns a ReadableStream + structured data promise */
@@ -126,4 +147,6 @@ export interface ToolResult {
     setShippingAddressAction?: SetShippingAddressAction;
     setBillingAddressAction?: SetBillingAddressAction;
     setShippingMethodAction?: SetShippingMethodAction;
+    promotions?: AiPromotion[];
+    applyCouponAction?: ApplyCouponAction;
 }

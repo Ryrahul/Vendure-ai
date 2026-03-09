@@ -50,6 +50,25 @@ export interface ChatOrderLine {
     linePriceWithTax: number;
 }
 
+/** A promotion/deal available to the customer */
+export interface ChatPromotion {
+    id: string;
+    name: string;
+    description: string;
+    couponCode?: string;
+    startsAt?: string;
+    endsAt?: string;
+    perCustomerUsageLimit?: number;
+    conditions?: string[];
+    discountSummary?: string;
+}
+
+/** Action signal for applying/removing a coupon code */
+export interface ApplyCouponAction {
+    couponCode: string;
+    applied: boolean;
+}
+
 /** An order from order history or tracking */
 export interface ChatOrder {
     id: string;
@@ -72,6 +91,8 @@ export interface ExtractedData {
     addToCartAction?: AddToCartAction;
     activeOrder?: ChatActiveOrder;
     orders?: ChatOrder[];
+    promotions?: ChatPromotion[];
+    applyCouponAction?: ApplyCouponAction;
 }
 
 /** Props for the main VendureAiChat component */
@@ -104,6 +125,8 @@ export interface VendureAiChatProps {
     onAddToCart?: (variantId: string, quantity: number, productName: string) => void | Promise<void>;
     /** Called when the AI modifies cart state (add, adjust quantity, checkout actions) */
     onCartUpdate?: (order: ChatActiveOrder) => void;
+    /** Called when a coupon code is applied or removed via the AI */
+    onCouponAction?: (couponCode: string, applied: boolean) => void;
     /** Called when user clicks a link (product, collection) */
     onNavigate?: (path: string) => void;
 
@@ -116,6 +139,8 @@ export interface VendureAiChatProps {
     renderCartSummary?: (order: ChatActiveOrder) => React.ReactNode;
     /** Custom renderer for order history cards */
     renderOrder?: (order: ChatOrder) => React.ReactNode;
+    /** Custom renderer for promotion cards */
+    renderPromotion?: (promotion: ChatPromotion) => React.ReactNode;
 
     // Styling
     /** Additional CSS class name */

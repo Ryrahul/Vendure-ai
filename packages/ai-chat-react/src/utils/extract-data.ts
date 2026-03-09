@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai';
-import type { ChatProduct, ChatCollection, ChatOrder, AddToCartAction, ChatActiveOrder, ExtractedData } from '../types';
+import type { ChatProduct, ChatCollection, ChatOrder, ChatPromotion, AddToCartAction, ApplyCouponAction, ChatActiveOrder, ExtractedData } from '../types';
 
 function extractToolOutput(p: Record<string, unknown>, data: ExtractedData) {
     const result = p.output as Record<string, unknown>;
@@ -35,6 +35,22 @@ function extractToolOutput(p: Record<string, unknown>, data: ExtractedData) {
     // Extract orders (from getOrderHistory / trackOrder)
     if (Array.isArray(result.orders) && result.orders.length > 0) {
         data.orders = result.orders as ChatOrder[];
+    }
+
+    // Extract promotions (from getAvailablePromotions)
+    if (Array.isArray(result.promotions) && result.promotions.length > 0) {
+        if (!data.promotions) data.promotions = [];
+        for (const promo of result.promotions) {
+            const promotion = promo as ChatPromotion;
+            if (!data.promotions.find(existing => existing.id === promotion.id)) {
+                data.promotions.push(promotion);
+            }
+        }
+    }
+
+    // Extract coupon action signal (from applyCouponCode / removeCouponCode)
+    if (result.applyCouponAction) {
+        data.applyCouponAction = result.applyCouponAction as ApplyCouponAction;
     }
 }
 

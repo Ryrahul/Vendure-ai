@@ -33,11 +33,13 @@ export function VendureAiChat({
     quickActions = DEFAULT_QUICK_ACTIONS,
     onAddToCart,
     onCartUpdate,
+    onCouponAction,
     onNavigate,
     renderProduct,
     renderCollection,
     renderCartSummary,
     renderOrder,
+    renderPromotion,
     className,
     formatPrice = defaultFormatPrice,
 }: VendureAiChatProps) {
@@ -83,6 +85,12 @@ export function VendureAiChat({
                     data.addToCartAction.productName ?? 'Item',
                     data.addToCartAction.quantity,
                 );
+            }
+
+            // Notify when a coupon code is applied or removed
+            if (data.applyCouponAction && onCouponAction && !processedActionsRef.current.has(msg.id + '-coupon')) {
+                processedActionsRef.current.add(msg.id + '-coupon');
+                onCouponAction(data.applyCouponAction.couponCode, data.applyCouponAction.applied);
             }
         }
     }, [messages, status]);
@@ -150,7 +158,7 @@ export function VendureAiChat({
                     {/* Panel */}
                     <div
                         className={cn(
-                            'absolute bottom-[4.5rem] flex h-[80vh] max-h-[600px] w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border bg-background shadow-xl animate-in fade-in slide-in-from-bottom-2',
+                            'absolute bottom-[4.5rem] flex h-[85vh] max-h-[750px] w-[28rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border bg-background shadow-xl animate-in fade-in slide-in-from-bottom-2',
                             position === 'bottom-right' ? 'right-0' : 'left-0',
                         )}
                     >
@@ -227,6 +235,7 @@ export function VendureAiChat({
                                 renderCollection={renderCollection}
                                 renderCartSummary={renderCartSummary}
                                 renderOrder={renderOrder}
+                                renderPromotion={renderPromotion}
                                 formatPrice={formatPrice}
                                 addingToCart={addingToCart}
                                 onAddToCartClick={handleAddToCartClick}

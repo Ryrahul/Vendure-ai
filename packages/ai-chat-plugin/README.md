@@ -11,7 +11,7 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 - **Vector Search** — pgvector-powered semantic search over products and collections
 - **Auto-Embedding** — Automatic embedding generation on product/variant/collection create/update/delete
 - **Bulk Embedding** — Admin GraphQL mutation `triggerEmbedAll` to embed all existing catalog data
-- **Self-Managing Schema** — Automatically creates pgvector extension and embedding columns
+- **Embedding Entities** — Registers TypeORM entities for vector storage (requires pgvector and a migration)
 
 ## Requirements
 
@@ -171,7 +171,16 @@ The plugin adds three entities to your database:
 - `variant_embedding` — Vector embeddings for product variants
 - `collection_embedding` — Vector embeddings for collections
 
-These are automatically managed. The plugin creates the pgvector extension and embedding columns on startup.
+**Prerequisites:**
+
+1. **Install pgvector** — The [pgvector](https://github.com/pgvector/pgvector) extension must be installed in your PostgreSQL instance. Enable it by running:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+2. **Run migrations** — The plugin registers the entities with Vendure, but you must generate and run a database migration to create the tables and vector columns:
+   ```bash
+   npx vendure migrate
+   ```
 
 ## Admin Dashboard AI Chat
 

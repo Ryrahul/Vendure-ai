@@ -13,6 +13,7 @@ import { SearchTools } from './tools/search-tools';
 import { CartTools } from './tools/cart-tools';
 import { OrderTools } from './tools/order-tools';
 import { CheckoutTools } from './tools/checkout-tools';
+import { PromotionTools } from './tools/promotion-tools';
 import { SYSTEM_PROMPT } from './system-prompt';
 import type {
     AiChatProduct,
@@ -22,6 +23,8 @@ import type {
     AiChatOrderLine,
     AiActiveOrder,
     AiCartLine,
+    AiPromotion,
+    ApplyCouponAction,
     SetShippingAddressAction,
     SetBillingAddressAction,
     SetShippingMethodAction,
@@ -38,6 +41,8 @@ export type {
     AiChatOrderLine,
     AiActiveOrder,
     AiCartLine,
+    AiPromotion,
+    ApplyCouponAction,
     SetShippingAddressAction,
     SetBillingAddressAction,
     SetShippingMethodAction,
@@ -59,6 +64,7 @@ export class AiChatService implements OnModuleInit {
     private cartTools!: CartTools;
     private orderTools!: OrderTools;
     private checkoutTools!: CheckoutTools;
+    private promotionTools!: PromotionTools;
 
     constructor(
         @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
@@ -117,6 +123,7 @@ export class AiChatService implements OnModuleInit {
         this.cartTools = new CartTools(this.connection, this.orderService, this.mapper);
         this.orderTools = new OrderTools(this.connection, this.mapper);
         this.checkoutTools = new CheckoutTools(this.connection, this.orderService);
+        this.promotionTools = new PromotionTools(this.connection, this.orderService);
     }
 
     private buildTools(ctx: RequestContext, customerId?: string | number): ToolSet {
@@ -241,6 +248,30 @@ export class AiChatService implements OnModuleInit {
                 }),
                 execute: async ({ shippingMethodId }) => this.checkoutTools.setShippingMethod(ctx, { shippingMethodId }),
             }),
+            getAvailablePromotions: tool({
+                description: 'Get all currently active promotions and deals available in the store. Shows both automatic promotions and coupon-based promotions with their discount details and conditions.',
+                inputSchema: z.object({}),
+                execute: async () => this.promotionTools.getAvailablePromotions(ctx),
+            }),
+            applyCouponCode: tool({
+                description: 'Apply a coupon/promo code to the customer\'s active order. The customer must be logged in and have items in their cart.',
+                inputSchema: z.object({
+                    couponCode: z.string().describe('The coupon code to apply'),
+                }),
+                execute: async ({ couponCode }) => this.promotionTools.applyCouponCode(ctx, { couponCode }),
+            }),
+            removeCouponCode: tool({
+                description: 'Remove a previously applied coupon code from the customer\'s active order.',
+                inputSchema: z.object({
+                    couponCode: z.string().describe('The coupon code to remove'),
+                }),
+                execute: async ({ couponCode }) => this.promotionTools.removeCouponCode(ctx, { couponCode }),
+            }),
+            getCartDiscounts: tool({
+                description: 'Get details about discounts currently applied to the cart, applied coupon codes, and promotions the customer is close to qualifying for (e.g. "spend $X more to get free shipping").',
+                inputSchema: z.object({}),
+                execute: async () => this.promotionTools.getCartDiscounts(ctx),
+            }),
 
         };
     }
@@ -294,8 +325,10 @@ export class AiChatService implements OnModuleInit {
         let allProducts: AiChatProduct[] = [];
         let allCollections: AiChatCollection[] = [];
         let allOrders: AiChatOrder[] = [];
+        let allPromotions: AiPromotion[] = [];
         let addToCartAction: AddToCartAction | undefined;
         let activeOrder: AiActiveOrder | undefined;
+        let applyCouponAction: ApplyCouponAction | undefined;
         let setShippingAddressAction: SetShippingAddressAction | undefined;
         let setBillingAddressAction: SetBillingAddressAction | undefined;
         let setShippingMethodAction: SetShippingMethodAction | undefined;
@@ -314,11 +347,17 @@ export class AiChatService implements OnModuleInit {
                 if (data.orders?.length > 0) {
                     allOrders = data.orders;
                 }
+                if (data.promotions?.length > 0) {
+                    allPromotions = data.promotions;
+                }
                 if (data.addToCartAction) {
                     addToCartAction = data.addToCartAction;
                 }
                 if (data.activeOrder) {
                     activeOrder = data.activeOrder;
+                }
+                if (data.applyCouponAction) {
+                    applyCouponAction = data.applyCouponAction;
                 }
                 if (data.setShippingAddressAction) {
                     setShippingAddressAction = data.setShippingAddressAction;
@@ -339,6 +378,8 @@ export class AiChatService implements OnModuleInit {
             addToCartAction,
             orders: allOrders.length > 0 ? allOrders : undefined,
             activeOrder,
+            promotions: allPromotions.length > 0 ? allPromotions : undefined,
+            applyCouponAction,
             setShippingAddressAction,
             setBillingAddressAction,
             setShippingMethodAction,

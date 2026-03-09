@@ -32,3 +32,4 @@ export type {
     SetBillingAddressAction,
     SetShippingMethodAction,
 } from './controllers/ai-assistant.controller';
+export type { AiPromotion, ApplyCouponAction } from './services/types';

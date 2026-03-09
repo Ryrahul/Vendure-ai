@@ -11,6 +11,7 @@ export { ProductCard } from './components/ProductCard';
 export { CollectionBadge } from './components/CollectionBadge';
 export { CartSummary } from './components/CartSummary';
 export { OrderCard } from './components/OrderCard';
+export { PromotionCard } from './components/PromotionCard';
 
 // Types
 export type {
@@ -20,7 +21,9 @@ export type {
     ChatCollection,
     ChatOrder,
     ChatOrderLine,
+    ChatPromotion,
     AddToCartAction,
+    ApplyCouponAction,
     ChatCartLine,
     ChatActiveOrder,
     ExtractedData,

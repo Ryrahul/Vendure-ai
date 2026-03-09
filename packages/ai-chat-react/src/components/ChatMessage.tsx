@@ -8,6 +8,7 @@ import { ProductCard } from './ProductCard';
 import { CollectionBadge } from './CollectionBadge';
 import { CartSummary } from './CartSummary';
 import { OrderCard } from './OrderCard';
+import { PromotionCard } from './PromotionCard';
 
 interface ChatMessageProps {
     message: UIMessage;
@@ -17,6 +18,7 @@ interface ChatMessageProps {
     renderCollection?: VendureAiChatProps['renderCollection'];
     renderCartSummary?: VendureAiChatProps['renderCartSummary'];
     renderOrder?: VendureAiChatProps['renderOrder'];
+    renderPromotion?: VendureAiChatProps['renderPromotion'];
     formatPrice: (price: number) => string;
     addingToCart: string | null;
     onAddToCartClick: (variantId: string, productName: string, quantity?: number) => void;
@@ -29,6 +31,7 @@ export function ChatMessage({
     renderCollection,
     renderCartSummary,
     renderOrder,
+    renderPromotion,
     formatPrice,
     addingToCart,
     onAddToCartClick,
@@ -37,7 +40,7 @@ export function ChatMessage({
     const data: ExtractedData | null = message.role === 'assistant' ? extractDataFromMessage(message) : null;
 
     // Skip empty assistant messages (tool-only steps with no text)
-    if (message.role === 'assistant' && !text && !data?.products.length && !data?.collections.length && !data?.activeOrder && !data?.orders?.length) {
+    if (message.role === 'assistant' && !text && !data?.products.length && !data?.collections.length && !data?.activeOrder && !data?.orders?.length && !data?.promotions?.length) {
         return null;
     }
 
@@ -103,6 +106,22 @@ export function ChatMessage({
                     ) : (
                         <CartSummary order={data.activeOrder} formatPrice={formatPrice} />
                     )
+                )}
+
+                {/* Promotions */}
+                {data?.promotions && data.promotions.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        {data.promotions.map((promo) =>
+                            renderPromotion ? (
+                                <React.Fragment key={promo.id}>{renderPromotion(promo)}</React.Fragment>
+                            ) : (
+                                <PromotionCard
+                                    key={promo.id}
+                                    promotion={promo}
+                                />
+                            ),
+                        )}
+                    </div>
                 )}
 
                 {/* Order history */}
