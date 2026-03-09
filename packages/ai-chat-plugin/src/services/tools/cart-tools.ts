@@ -21,7 +21,7 @@ export class CartTools {
         const quantity = Math.max(1, Number(args.quantity) || 1);
         const productName = args.productName ? String(args.productName) : undefined;
 
-        this.logger.log(`addToCart called with variantId=${variantId}, quantity=${quantity}, productName=${productName}`);
+        this.logger.debug(`addToCart called with variantId=${variantId}, quantity=${quantity}, productName=${productName}`);
 
         if (!variantId) {
             return { products: [], collections: [], summary: 'Error: No variantId provided. Search for the product first to get the correct variantId.' };
@@ -55,7 +55,7 @@ export class CartTools {
             ?? (variant as any).translations?.[0]?.name
             ?? 'item';
 
-        this.logger.log(`addToCart verified: variantId=${variantId} is "${actualProductName}" (variant: ${(variant as any).translations?.[0]?.name ?? variant.id}), LLM said productName="${productName}"`);
+        this.logger.debug(`addToCart verified: variantId=${variantId} is "${actualProductName}" (variant: ${(variant as any).translations?.[0]?.name ?? variant.id}), LLM said productName="${productName}"`);
 
         // Safety check: if the LLM provided a productName, verify it roughly matches the actual product
         if (productName && actualProductName !== 'item') {

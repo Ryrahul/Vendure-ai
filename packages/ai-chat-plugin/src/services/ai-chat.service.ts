@@ -294,13 +294,13 @@ export class AiChatService implements OnModuleInit {
             model: this.openai('gpt-4o-mini'),
             messages,
             tools,
-            stopWhen: stepCountIs(5),
+            stopWhen: stepCountIs(12),
             temperature: 0.7,
             maxOutputTokens: 1024,
             onStepFinish: (step) => {
                 if (step.toolResults && step.toolResults.length > 0) {
                     for (const result of step.toolResults) {
-                        this.logger.log(`Tool "${result.toolName}" completed`);
+                        this.logger.debug(`Tool "${result.toolName}" completed`);
                     }
                 }
             },

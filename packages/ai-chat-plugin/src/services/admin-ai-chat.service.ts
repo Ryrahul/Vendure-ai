@@ -301,7 +301,7 @@ export class AdminAiChatService implements OnModuleInit {
             onStepFinish: (step) => {
                 if (step.toolResults && step.toolResults.length > 0) {
                     for (const tr of step.toolResults) {
-                        this.logger.log(`Admin tool "${tr.toolName}" completed`);
+                        this.logger.debug(`Admin tool "${tr.toolName}" completed`);
                     }
                 }
             },

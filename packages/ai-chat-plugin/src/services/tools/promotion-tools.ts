@@ -37,7 +37,7 @@ export class PromotionTools {
                  ORDER BY p.id ASC`,
             );
 
-            this.logger.log(`getAvailablePromotions: query returned ${(result as any[]).length} rows`);
+            this.logger.debug(`getAvailablePromotions: query returned ${(result as any[]).length} rows`);
 
             const promotions: AiPromotion[] = [];
             for (const row of result as any[]) {

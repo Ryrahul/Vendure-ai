@@ -40,7 +40,7 @@ export class SearchTools {
                 groupByProduct: true,
             }, true);
 
-            this.logger.log(`FulltextSearch returned ${result.items.length} items for "${query}": ${result.items.map((i: any) => `${i.productName}(pid:${i.productId},vid:${i.productVariantId})`).join(', ')}`);
+            this.logger.debug(`FulltextSearch returned ${result.items.length} items for "${query}": ${result.items.map((i: any) => `${i.productName}(pid:${i.productId},vid:${i.productVariantId})`).join(', ')}`);
             mapped = result.items.map((item: any) => {
                 const price = item.price && 'value' in item.price
                     ? item.price.value
@@ -179,7 +179,7 @@ export class SearchTools {
                 groupByProduct: true,
             }, true);
 
-            this.logger.log(`filterByPrice: FulltextSearch returned ${result.items.length} items for "${query}"`);
+            this.logger.debug(`filterByPrice: FulltextSearch returned ${result.items.length} items for "${query}"`);
 
             // Map results and extract price
             let candidates = result.items.map((item: any) => {

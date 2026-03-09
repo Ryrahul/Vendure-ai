@@ -178,7 +178,7 @@ export class AiAssistantController {
             // Fetch history from server-side cache
             const cached = await this.conversationCacheService.getHistory(conversationId);
             const history = cached?.messages ?? [];
-            this.logger.log(
+            this.logger.debug(
                 `[CACHE] Conversation ${conversationId}: ${history.length} cached messages (skipped ${bodyHistory.length} from request body)`,
             );
             return { message, history, conversationId };
@@ -196,22 +196,22 @@ export class AiAssistantController {
         const tokenMatch = authHeader?.trim().match(/^bearer\s(.+)$/i);
         const sessionToken = tokenMatch?.[1];
 
-        this.logger.log(`[AUTH] Session token present: ${!!sessionToken}`);
+        this.logger.debug(`[AUTH] Session token present: ${!!sessionToken}`);
 
         let session;
         if (sessionToken) {
             session = await this.sessionService.getSessionFromToken(sessionToken);
-            this.logger.log(`[AUTH] Session found: ${!!session}, userId: ${session?.user?.id ?? 'NONE'}`);
+            this.logger.debug(`[AUTH] Session found: ${!!session}, userId: ${session?.user?.id ?? 'NONE'}`);
         }
 
         const ctx = await this.requestContextService.fromRequest(req, undefined, undefined, session);
-        this.logger.log(`[AUTH] ctx.activeUserId: ${ctx.activeUserId ?? 'NONE'}`);
+        this.logger.debug(`[AUTH] ctx.activeUserId: ${ctx.activeUserId ?? 'NONE'}`);
 
         let customerId: string | number | undefined;
         if (ctx.activeUserId) {
             const customer = await this.customerService.findOneByUserId(ctx, ctx.activeUserId);
             customerId = customer?.id;
-            this.logger.log(`[AUTH] customerId: ${customerId ?? 'NONE'}`);
+            this.logger.debug(`[AUTH] customerId: ${customerId ?? 'NONE'}`);
         }
 
         return { ctx, customerId };
