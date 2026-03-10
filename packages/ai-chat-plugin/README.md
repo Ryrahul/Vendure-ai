@@ -25,6 +25,17 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 npm install @rahul_vendure/ai-chat-plugin
 ```
 
+## Prerequisites
+
+1. **Install pgvector** — The [pgvector](https://github.com/pgvector/pgvector) extension must be installed in your PostgreSQL instance. Enable it by running:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+2. **Run migrations** — The plugin registers the entities with Vendure, but you must generate and run a database migration to create the tables and vector columns:
+   ```bash
+   npx vendure migrate
+   ```
+
 ## Setup
 
 ### 1. Add the plugin to your Vendure config
@@ -144,7 +155,7 @@ export const config: VendureConfig = {
 
 ## Tools
 
-The AI assistant has 14 built-in tools:
+The AI assistant has 19 built-in tools:
 
 | Tool | Description |
 |------|-------------|
@@ -159,9 +170,14 @@ The AI assistant has 14 built-in tools:
 | `trackOrder` | Get order status and tracking information |
 | `getAvailableCountries` | List countries for shipping/billing |
 | `getEligibleShippingMethods` | Get shipping options for active order |
+| `getEligiblePaymentMethods` | Get available payment methods for active order |
 | `setShippingAddress` | Set shipping address on active order |
 | `setBillingAddress` | Set billing address on active order |
 | `setShippingMethod` | Set shipping method on active order |
+| `getAvailablePromotions` | List active promotions and deals (automatic + coupon-based) |
+| `applyCouponCode` | Apply a coupon/promo code to the active order |
+| `removeCouponCode` | Remove a coupon code from the active order |
+| `getCartDiscounts` | View cart discounts and how close the customer is to qualifying for promotions |
 
 ## Entities
 
@@ -170,17 +186,6 @@ The plugin adds three entities to your database:
 - `product_embedding` — Vector embeddings for products
 - `variant_embedding` — Vector embeddings for product variants
 - `collection_embedding` — Vector embeddings for collections
-
-**Prerequisites:**
-
-1. **Install pgvector** — The [pgvector](https://github.com/pgvector/pgvector) extension must be installed in your PostgreSQL instance. Enable it by running:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-2. **Run migrations** — The plugin registers the entities with Vendure, but you must generate and run a database migration to create the tables and vector columns:
-   ```bash
-   npx vendure migrate
-   ```
 
 ## Admin Dashboard AI Chat
 
@@ -220,4 +225,4 @@ import {
 
 ## License
 
-MIT
+AGPL-3.0 — see [LICENSE](./LICENSE) for details.

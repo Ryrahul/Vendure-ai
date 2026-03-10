@@ -14,7 +14,8 @@
   "files": [
     "dist",
     "src/dashboard",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
@@ -31,7 +32,7 @@
     "react"
   ],
   "author": "Rahul Yadav",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "publishConfig": {
     "access": "public"
   },

@@ -125,4 +125,5 @@ This is a **dashboard-only** package — it contains no backend logic. The archi
 
 ## License
 
-MIT
+
+AGPL-3.0 — see [LICENSE](./LICENSE) for details.

@@ -1,6 +1,6 @@
 {
   "name": "@rahul_vendure/ai-chat-plugin",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "AI-powered shopping assistant plugin for Vendure — LLM chat, vector search, cart management, and order tracking",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,7 +12,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
@@ -32,7 +33,7 @@
     "ecommerce"
   ],
   "author": "Rahul Yadav",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "publishConfig": {
     "access": "public"
   },
