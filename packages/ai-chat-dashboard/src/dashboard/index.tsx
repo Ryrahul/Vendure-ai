@@ -1,33 +1,13 @@
 import { defineDashboardExtension } from '@vendure/dashboard';
 import { AdminChatWidget } from './AdminChatWidget';
+import { AiChatToolbarButton } from './components/AiChatToolbarButton';
+import { EmbedAllButton } from './components/EmbedAllButton';
 import React from 'react';
 
 function AiChatPage() {
     return (
-        <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            height: 'calc(100vh - 80px)',
-            padding: '24px',
-        }}>
-            <h1 style={{
-                fontSize: '24px',
-                fontWeight: 600,
-                marginBottom: '16px',
-                color: 'var(--color-foreground, #0f172a)',
-            }}>
-                AI Chat Assistant
-            </h1>
-            <div style={{
-                flex: 1,
-                minHeight: 0,
-                border: '1px solid var(--color-border, #e2e8f0)',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                backgroundColor: 'var(--color-card, #fff)',
-            }}>
-                <AdminChatWidget />
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', minHeight: 0 }}>
+            <AdminChatWidget />
         </div>
     );
 }
@@ -50,6 +30,20 @@ defineDashboardExtension({
             title: 'AI',
             placement: 'top',
             order: 150,
+        },
+    ],
+    actionBarItems: [
+        {
+            pageId: 'global-setting-detail',
+            id: 'embed-all-button',
+            component: () => <EmbedAllButton />,
+        },
+    ],
+    toolbarItems: [
+        {
+            id: 'ai-chat-toolbar',
+            component: AiChatToolbarButton,
+            position: { itemId: 'alerts', order: 'before' },
         },
     ],
 });

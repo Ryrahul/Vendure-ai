@@ -1,5 +1,12 @@
 import { Logger } from '@nestjs/common';
-import { RequestContext, TransactionalConnection, PaymentMethod } from '@vendure/core';
+import {
+    RequestContext,
+    TransactionalConnection,
+    PaymentMethod,
+    PaymentMethodService,
+    LanguageCode,
+    isGraphQlErrorResult,
+} from '@vendure/core';
 
 interface AdminToolResult {
     summary: string;
@@ -10,6 +17,7 @@ export class AdminPaymentTools {
 
     constructor(
         private connection: TransactionalConnection,
+        private paymentMethodService: PaymentMethodService,
     ) {}
 
     async getPaymentMethods(
@@ -58,6 +66,130 @@ export class AdminPaymentTools {
         } catch (e) {
             this.logger.error(`Error fetching payment methods: ${e}`);
             return { summary: 'Error fetching payment methods. Please try again.' };
+        }
+    }
+
+    async createPaymentMethod(
+        ctx: RequestContext,
+        args: {
+            name: string;
+            code: string;
+            description?: string;
+            enabled?: boolean;
+            handlerCode: string;
+            handlerArgs?: Record<string, string>;
+            checkerCode?: string;
+            checkerArgs?: Record<string, string>;
+        },
+    ): Promise<AdminToolResult> {
+        try {
+            const handler = {
+                code: args.handlerCode,
+                arguments: args.handlerArgs
+                    ? Object.entries(args.handlerArgs).map(([name, value]) => ({ name, value }))
+                    : [],
+            };
+
+            const input: any = {
+                code: args.code,
+                enabled: args.enabled ?? true,
+                handler,
+                translations: [
+                    {
+                        languageCode: LanguageCode.en,
+                        name: args.name,
+                        description: args.description ?? '',
+                    },
+                ],
+            };
+
+            if (args.checkerCode) {
+                input.checker = {
+                    code: args.checkerCode,
+                    arguments: args.checkerArgs
+                        ? Object.entries(args.checkerArgs).map(([name, value]) => ({ name, value }))
+                        : [],
+                };
+            }
+
+            const result = await this.paymentMethodService.create(ctx, input);
+
+            if (isGraphQlErrorResult(result)) {
+                return { summary: `Failed to create payment method: ${(result as any).message ?? 'Unknown error'}` };
+            }
+
+            const enabledStr = (args.enabled ?? true) ? 'enabled' : 'disabled';
+            return {
+                summary: `Payment method "${args.name}" (ID: ${result.id}, code: "${args.code}") created successfully (${enabledStr}, handler: "${args.handlerCode}").`,
+            };
+        } catch (e) {
+            this.logger.error(`Error creating payment method: ${e}`);
+            return { summary: `Error creating payment method: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async updatePaymentMethod(
+        ctx: RequestContext,
+        args: {
+            paymentMethodId: string;
+            name?: string;
+            code?: string;
+            description?: string;
+            enabled?: boolean;
+        },
+    ): Promise<AdminToolResult> {
+        try {
+            const input: any = {
+                id: args.paymentMethodId,
+            };
+
+            if (args.name !== undefined || args.description !== undefined) {
+                input.translations = [
+                    {
+                        languageCode: LanguageCode.en,
+                        ...(args.name !== undefined && { name: args.name }),
+                        ...(args.description !== undefined && { description: args.description }),
+                    },
+                ];
+            }
+
+            if (args.code !== undefined) {
+                input.code = args.code;
+            }
+
+            if (args.enabled !== undefined) {
+                input.enabled = args.enabled;
+            }
+
+            const result = await this.paymentMethodService.update(ctx, input);
+
+            if (isGraphQlErrorResult(result)) {
+                return { summary: `Failed to update payment method: ${(result as any).message ?? 'Unknown error'}` };
+            }
+
+            const name = (result as any).translations?.[0]?.name ?? '';
+            return { summary: `Payment method "${name}" (ID: ${result.id}) updated successfully.` };
+        } catch (e) {
+            this.logger.error(`Error updating payment method: ${e}`);
+            return { summary: `Error updating payment method: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async deletePaymentMethod(
+        ctx: RequestContext,
+        args: { paymentMethodId: string; force?: boolean },
+    ): Promise<AdminToolResult> {
+        try {
+            const result = await this.paymentMethodService.delete(ctx, args.paymentMethodId, args.force ?? false);
+
+            if (result.result === 'DELETED') {
+                return { summary: `Payment method (ID: ${args.paymentMethodId}) deleted successfully.` };
+            }
+
+            return { summary: `Failed to delete payment method (ID: ${args.paymentMethodId}): ${result.message ?? 'Unknown error'}` };
+        } catch (e) {
+            this.logger.error(`Error deleting payment method: ${e}`);
+            return { summary: `Error deleting payment method: ${e instanceof Error ? e.message : 'Unknown error'}` };
         }
     }
 }

@@ -1,5 +1,12 @@
 import { Logger } from '@nestjs/common';
-import { RequestContext, TransactionalConnection, Country } from '@vendure/core';
+import {
+    RequestContext,
+    TransactionalConnection,
+    Country,
+    CountryService,
+    LanguageCode,
+    isGraphQlErrorResult,
+} from '@vendure/core';
 
 interface AdminToolResult {
     summary: string;
@@ -10,7 +17,10 @@ export class AdminCountryTools {
 
     constructor(
         private connection: TransactionalConnection,
+        private countryService: CountryService,
     ) {}
+
+    // ─── Read operations ────────────────────────────────────────────────
 
     async getCountries(
         ctx: RequestContext,
@@ -57,6 +67,88 @@ export class AdminCountryTools {
         } catch (e) {
             this.logger.error(`Error fetching countries: ${e}`);
             return { summary: 'Error fetching countries. Please try again.' };
+        }
+    }
+
+    // ─── Mutations ──────────────────────────────────────────────────────
+
+    async createCountry(
+        ctx: RequestContext,
+        args: { code: string; name: string; enabled?: boolean },
+    ): Promise<AdminToolResult> {
+        try {
+            const input = {
+                code: args.code,
+                enabled: args.enabled ?? true,
+                translations: [
+                    {
+                        languageCode: LanguageCode.en,
+                        name: args.name,
+                    },
+                ],
+            };
+
+            const result = await this.countryService.create(ctx, input);
+
+            const name = (result as any).translations?.[0]?.name ?? args.name;
+            return { summary: `Country "${name}" (code: ${args.code}) created successfully (ID: ${result.id}).` };
+        } catch (e) {
+            this.logger.error(`Error creating country: ${e}`);
+            return { summary: `Error creating country: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async updateCountry(
+        ctx: RequestContext,
+        args: { countryId: string; name?: string; code?: string; enabled?: boolean },
+    ): Promise<AdminToolResult> {
+        try {
+            const input: any = {
+                id: args.countryId,
+            };
+
+            if (args.name !== undefined) {
+                input.translations = [
+                    {
+                        languageCode: LanguageCode.en,
+                        name: args.name,
+                    },
+                ];
+            }
+
+            if (args.code !== undefined) {
+                input.code = args.code;
+            }
+
+            if (args.enabled !== undefined) {
+                input.enabled = args.enabled;
+            }
+
+            const result = await this.countryService.update(ctx, input);
+
+            const name = (result as any).translations?.[0]?.name ?? '';
+            return { summary: `Country "${name}" (ID: ${result.id}) updated successfully.` };
+        } catch (e) {
+            this.logger.error(`Error updating country: ${e}`);
+            return { summary: `Error updating country: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async deleteCountry(
+        ctx: RequestContext,
+        args: { countryId: string },
+    ): Promise<AdminToolResult> {
+        try {
+            const result = await this.countryService.delete(ctx, args.countryId);
+
+            if (result.result === 'DELETED') {
+                return { summary: `Country (ID: ${args.countryId}) deleted successfully.` };
+            }
+
+            return { summary: `Failed to delete country (ID: ${args.countryId}): ${result.message ?? 'Unknown error'}` };
+        } catch (e) {
+            this.logger.error(`Error deleting country: ${e}`);
+            return { summary: `Error deleting country: ${e instanceof Error ? e.message : 'Unknown error'}` };
         }
     }
 }

@@ -42,4 +42,17 @@ export interface AiAssistantPluginOptions {
      * @default true
      */
     enableConversationCache?: boolean;
+    /**
+     * Azure OpenAI configuration for chat completions.
+     * When provided, chat services will use Azure OpenAI instead of direct OpenAI.
+     * Also acts as a fallback if the primary OpenAI call fails.
+     */
+    azureOpenai?: {
+        /** Azure OpenAI API key */
+        apiKey: string;
+        /** Azure resource name (e.g. "my-resource") */
+        resourceName: string;
+        /** Azure deployment name (e.g. "gpt-4.1") */
+        deploymentName: string;
+    };
 }

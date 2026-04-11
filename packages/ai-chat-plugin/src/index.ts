@@ -10,6 +10,9 @@ export { CollectionEmbeddingService } from './services/collection-embedding.serv
 export { AiChatService } from './services/ai-chat.service';
 export { AdminAiChatService } from './services/admin-ai-chat.service';
 export { ConversationCacheService } from './services/conversation-cache.service';
+export { AiChatHistoryService } from './services/ai-chat-history.service';
+export { AiChatSession } from './entities/ai-chat-session.entity';
+export type { AiChatMessageEntry } from './entities/ai-chat-session.entity';
 export type { CachedConversation } from './services/conversation-cache.service';
 export type { EmbeddingOptions } from './services/embedding.service';
 export type { SimilarProductResult } from './services/product-embedding.service';
@@ -32,4 +35,6 @@ export type {
     SetBillingAddressAction,
     SetShippingMethodAction,
 } from './controllers/ai-assistant.controller';
-export type { AiPromotion, ApplyCouponAction } from './services/types';
+export type { AiPromotion, ApplyCouponAction, AiTokenUsage } from './services/types';
+export type { AdminChatResult } from './services/admin-ai-chat.service';
+export type { EmbedAllResult } from './generated/graphql';

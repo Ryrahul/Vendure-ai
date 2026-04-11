@@ -1,5 +1,12 @@
 import { Logger } from '@nestjs/common';
-import { RequestContext, TransactionalConnection, Promotion } from '@vendure/core';
+import {
+    RequestContext,
+    TransactionalConnection,
+    Promotion,
+    PromotionService,
+    LanguageCode,
+    isGraphQlErrorResult,
+} from '@vendure/core';
 
 interface AdminToolResult {
     summary: string;
@@ -10,7 +17,10 @@ export class AdminPromotionTools {
 
     constructor(
         private connection: TransactionalConnection,
+        private promotionService: PromotionService,
     ) {}
+
+    // ─── Read operations ────────────────────────────────────────────────
 
     async getPromotions(
         ctx: RequestContext,
@@ -72,6 +82,155 @@ export class AdminPromotionTools {
         } catch (e) {
             this.logger.error(`Error fetching promotions: ${e}`);
             return { summary: 'Error fetching promotions. Please try again.' };
+        }
+    }
+
+    async getPromotionConditionsAndActions(
+        _ctx: RequestContext,
+    ): Promise<AdminToolResult> {
+        return {
+            summary: [
+                '**Available Promotion Conditions:**',
+                '- `minimum_order_amount` — args: `{"amount": "1000", "taxInclusive": "false"}` (amount in cents, e.g. 1000 = $10.00)',
+                '- `customer_group` — args: `{"customerGroupId": "<ID>"}`',
+                '- `contains_products` — args: `{"minimum": "1", "productVariantIds": "[\"1\",\"2\"]"}`',
+                '- `at_least_n_with_facets` — args: `{"minimum": "1", "facets": "[\"1\",\"2\"]"}`',
+                '- `buy_x_get_y_free` — args: `{"amountX": "2", "variantIdsX": "[\"1\"]", "amountY": "1", "variantIdsY": "[\"2\"]"}`',
+                '',
+                '**Available Promotion Actions:**',
+                '- `order_percentage_discount` — args: `{"discount": "10"}` (10 = 10% off)',
+                '- `order_fixed_discount` — args: `{"discount": "500"}` (amount in cents, 500 = $5.00 off)',
+                '- `products_percentage_discount` — args: `{"discount": "15", "productVariantIds": "[\"1\",\"2\"]"}`',
+                '- `free_shipping` — args: `{}` (no arguments needed)',
+                '- `buy_x_get_y_free` — args: `{}` (no arguments, uses condition to determine products)',
+                '',
+                '**IMPORTANT:** All argument values must be strings, even numbers. Amount/discount values are in cents for currency or plain numbers for percentages.',
+            ].join('\n'),
+        };
+    }
+
+    // ─── Mutations ──────────────────────────────────────────────────────
+
+    async createPromotion(
+        ctx: RequestContext,
+        args: {
+            name: string;
+            enabled?: boolean;
+            couponCode?: string;
+            startsAt?: string;
+            endsAt?: string;
+            perCustomerUsageLimit?: number;
+            usageLimit?: number;
+            conditions?: Array<{ code: string; args: Record<string, string> }>;
+            actions?: Array<{ code: string; args: Record<string, string> }>;
+        },
+    ): Promise<AdminToolResult> {
+        try {
+            const conditionsInput = (args.conditions ?? []).map(c => ({
+                code: c.code,
+                arguments: Object.entries(c.args).map(([name, value]) => ({ name, value })),
+            }));
+
+            const actionsInput = (args.actions ?? []).map(a => ({
+                code: a.code,
+                arguments: Object.entries(a.args).map(([name, value]) => ({ name, value })),
+            }));
+
+            const input: any = {
+                translations: [
+                    {
+                        languageCode: LanguageCode.en,
+                        name: args.name,
+                        description: '',
+                    },
+                ],
+                enabled: args.enabled ?? true,
+                couponCode: args.couponCode ?? null,
+                startsAt: args.startsAt ?? null,
+                endsAt: args.endsAt ?? null,
+                perCustomerUsageLimit: args.perCustomerUsageLimit ?? null,
+                usageLimit: args.usageLimit ?? null,
+                conditions: conditionsInput,
+                actions: actionsInput,
+            };
+
+            const result = await this.promotionService.createPromotion(ctx, input);
+
+            if (isGraphQlErrorResult(result)) {
+                return { summary: `Failed to create promotion: ${(result as any).message ?? 'Unknown error'}` };
+            }
+
+            const name = (result as any).translations?.[0]?.name ?? args.name;
+            return { summary: `Promotion "${name}" created successfully (ID: ${(result as any).id}).` };
+        } catch (e) {
+            this.logger.error(`Error creating promotion: ${e}`);
+            return { summary: `Error creating promotion: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async updatePromotion(
+        ctx: RequestContext,
+        args: {
+            promotionId: string;
+            name?: string;
+            enabled?: boolean;
+            couponCode?: string;
+            startsAt?: string;
+            endsAt?: string;
+            perCustomerUsageLimit?: number;
+            usageLimit?: number;
+        },
+    ): Promise<AdminToolResult> {
+        try {
+            const input: any = {
+                id: args.promotionId,
+            };
+
+            if (args.name !== undefined) {
+                input.translations = [
+                    {
+                        languageCode: LanguageCode.en,
+                        name: args.name,
+                    },
+                ];
+            }
+
+            if (args.enabled !== undefined) input.enabled = args.enabled;
+            if (args.couponCode !== undefined) input.couponCode = args.couponCode;
+            if (args.startsAt !== undefined) input.startsAt = args.startsAt;
+            if (args.endsAt !== undefined) input.endsAt = args.endsAt;
+            if (args.perCustomerUsageLimit !== undefined) input.perCustomerUsageLimit = args.perCustomerUsageLimit;
+            if (args.usageLimit !== undefined) input.usageLimit = args.usageLimit;
+
+            const result = await this.promotionService.updatePromotion(ctx, input);
+
+            if (isGraphQlErrorResult(result)) {
+                return { summary: `Failed to update promotion: ${(result as any).message ?? 'Unknown error'}` };
+            }
+
+            const name = (result as any).translations?.[0]?.name ?? '';
+            return { summary: `Promotion "${name}" (ID: ${(result as any).id}) updated successfully.` };
+        } catch (e) {
+            this.logger.error(`Error updating promotion: ${e}`);
+            return { summary: `Error updating promotion: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async deletePromotion(
+        ctx: RequestContext,
+        args: { promotionId: string },
+    ): Promise<AdminToolResult> {
+        try {
+            const result = await this.promotionService.softDeletePromotion(ctx, args.promotionId);
+
+            if (result.result === 'DELETED') {
+                return { summary: `Promotion (ID: ${args.promotionId}) deleted successfully.` };
+            }
+
+            return { summary: `Failed to delete promotion (ID: ${args.promotionId}): ${result.message ?? 'Unknown error'}` };
+        } catch (e) {
+            this.logger.error(`Error deleting promotion: ${e}`);
+            return { summary: `Error deleting promotion: ${e instanceof Error ? e.message : 'Unknown error'}` };
         }
     }
 }

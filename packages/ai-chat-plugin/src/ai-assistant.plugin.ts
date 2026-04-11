@@ -3,6 +3,7 @@ import { EventBus, PluginCommonModule, VendurePlugin } from '@vendure/core';
 import { ProductEmbedding } from './entities/product-embedding.entity';
 import { VariantEmbedding } from './entities/variant-embedding.entity';
 import { CollectionEmbedding } from './entities/collection-embedding.entity';
+import { AiChatSession } from './entities/ai-chat-session.entity';
 import { EmbeddingService } from './services/embedding.service';
 import { ProductEmbeddingService } from './services/product-embedding.service';
 import { VariantEmbeddingService } from './services/variant-embedding.service';
@@ -17,6 +18,7 @@ import { AiAssistantResolver } from './api/ai-assistant.resolver';
 import { AiAssistantController } from './controllers/ai-assistant.controller';
 import { AdminChatController } from './controllers/admin-chat.controller';
 import { AdminAiChatService } from './services/admin-ai-chat.service';
+import { AiChatHistoryService } from './services/ai-chat-history.service';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from './constants';
 import { embedAllSchemaExtension } from './api/schema-extensions';
 
@@ -29,7 +31,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
 
 @VendurePlugin({
     imports: [PluginCommonModule],
-    entities: [ProductEmbedding, VariantEmbedding, CollectionEmbedding],
+    entities: [ProductEmbedding, VariantEmbedding, CollectionEmbedding, AiChatSession],
     adminApiExtensions: {
         schema: () => embedAllSchemaExtension,
         resolvers: [AiAssistantResolver],
@@ -43,6 +45,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         CollectionEmbeddingService,
         AiChatService,
         AdminAiChatService,
+        AiChatHistoryService,
         ConversationCacheService,
         ProductEmbeddingHandler,
         VariantEmbeddingHandler,

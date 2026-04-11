@@ -116,6 +116,13 @@ export interface ApplyCouponAction {
     applied: boolean;
 }
 
+/** Token usage from the AI model response */
+export interface AiTokenUsage {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+}
+
 export interface ChatResult {
     message: string;
     products: AiChatProduct[];
@@ -128,6 +135,7 @@ export interface ChatResult {
     setShippingMethodAction?: SetShippingMethodAction;
     promotions?: AiPromotion[];
     applyCouponAction?: ApplyCouponAction;
+    usage?: AiTokenUsage;
 }
 
 /** Result type for streaming chat — returns a ReadableStream + structured data promise */

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { streamText, tool, stepCountIs, type ToolSet } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createAzure } from '@ai-sdk/azure';
 import { z } from 'zod';
 import { RequestContext, TransactionalConnection, OrderService, CustomerService, ConfigService } from '@vendure/core';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions, MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS } from '../constants';
@@ -30,6 +31,7 @@ import type {
     SetShippingMethodAction,
     ChatResult,
     StreamingChatResult,
+    AiTokenUsage,
 } from './types';
 
 // Re-export all types so existing consumers that import from this file continue to work
@@ -48,6 +50,7 @@ export type {
     SetShippingMethodAction,
     ChatResult,
     StreamingChatResult,
+    AiTokenUsage,
 };
 
 // Tool definitions are created inline in the chat/streamChat methods using Vercel AI SDK tool() + zod schemas
@@ -56,6 +59,8 @@ export type {
 export class AiChatService implements OnModuleInit {
     private readonly logger = new Logger(AiChatService.name);
     private openai: ReturnType<typeof createOpenAI>;
+    private azure: ReturnType<typeof createAzure> | null = null;
+    private azureDeploymentName: string = '';
     private fulltextSearchService: any; // Resolved at runtime from DefaultSearchPlugin's module
     private assetUrlPrefix: string = '';
 
@@ -78,6 +83,13 @@ export class AiChatService implements OnModuleInit {
         private configService: ConfigService,
     ) {
         this.openai = createOpenAI({ apiKey: options.openaiApiKey });
+        if (options.azureOpenai) {
+            this.azure = createAzure({
+                apiKey: options.azureOpenai.apiKey,
+                resourceName: options.azureOpenai.resourceName,
+            });
+            this.azureDeploymentName = options.azureOpenai.deploymentName;
+        }
     }
 
     async onModuleInit() {
@@ -290,6 +302,7 @@ export class AiChatService implements OnModuleInit {
 
         const tools = this.buildTools(ctx, customerId);
 
+        // OpenAI is primary model
         return streamText({
             model: this.openai('gpt-4o-mini'),
             messages,
@@ -317,10 +330,59 @@ export class AiChatService implements OnModuleInit {
         conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
         customerId?: string | number,
     ): Promise<ChatResult> {
-        const result = this.streamChat(ctx, userMessage, conversationHistory, customerId);
+        // Try OpenAI first, fall back to Azure if available
+        try {
+            return await this.runShopChat(ctx, userMessage, conversationHistory, customerId, this.openai('gpt-4o-mini'));
+        } catch (primaryError) {
+            this.logger.error(`Primary OpenAI failed: ${primaryError}`);
+            if (this.azure) {
+                this.logger.log('Falling back to Azure OpenAI for shop chat...');
+                try {
+                    return await this.runShopChat(ctx, userMessage, conversationHistory, customerId, this.azure(this.azureDeploymentName));
+                } catch (fallbackError) {
+                    this.logger.error(`Azure fallback also failed: ${fallbackError}`);
+                    throw fallbackError;
+                }
+            }
+            throw primaryError;
+        }
+    }
 
-        const text = await result.text;
-        const steps = await result.steps;
+    private async runShopChat(
+        ctx: RequestContext,
+        userMessage: string,
+        conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+        customerId: string | number | undefined,
+        model: any,
+    ): Promise<ChatResult> {
+        const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...conversationHistory,
+            { role: 'user', content: userMessage },
+        ];
+
+        const tools = this.buildTools(ctx, customerId);
+
+        const result = streamText({
+            model,
+            messages,
+            tools,
+            stopWhen: stepCountIs(12),
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+            onStepFinish: (step) => {
+                if (step.toolResults && step.toolResults.length > 0) {
+                    for (const r of step.toolResults) {
+                        this.logger.debug(`Tool "${r.toolName}" completed`);
+                    }
+                }
+            },
+            onError: (event) => {
+                this.logger.error(`streamText error: ${event.error}`);
+            },
+        });
+
+        const [text, steps, usage] = await Promise.all([result.text, result.steps, result.usage]);
 
         let allProducts: AiChatProduct[] = [];
         let allCollections: AiChatCollection[] = [];
@@ -383,6 +445,11 @@ export class AiChatService implements OnModuleInit {
             setShippingAddressAction,
             setBillingAddressAction,
             setShippingMethodAction,
+            usage: {
+                inputTokens: usage.inputTokens ?? 0,
+                outputTokens: usage.outputTokens ?? 0,
+                totalTokens: usage.totalTokens ?? 0,
+            },
         };
     }
 }

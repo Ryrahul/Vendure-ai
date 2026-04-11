@@ -98,8 +98,12 @@ export const config: VendureConfig = {
         AiAssistantPlugin.init({
             openaiApiKey: process.env.OPENAI_API_KEY ?? '',
             embeddingModel: 'text-embedding-3-small',
-            // todo: add env bata paxi
             assetBaseUrl: IS_DEV ? undefined : normalizeAssetUrlPrefix(process.env.ASSET_URL_PREFIX),
+            azureOpenai: process.env.AZURE_OPENAI_API_KEY ? {
+                apiKey: process.env.AZURE_OPENAI_API_KEY,
+                resourceName: process.env.AZURE_OPENAI_RESOURCE_NAME ?? '',
+                deploymentName: process.env.AZURE_OPENAI_DEPLOYMENT_NAME ?? 'gpt-4.1',
+            } : undefined,
         }),
         EmailPlugin.init({
             devMode: true,

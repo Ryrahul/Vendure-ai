@@ -1,5 +1,13 @@
 import { Logger } from '@nestjs/common';
-import { RequestContext, TransactionalConnection, Administrator, Role } from '@vendure/core';
+import {
+    RequestContext,
+    TransactionalConnection,
+    Administrator,
+    Role,
+    AdministratorService,
+    RoleService,
+    Permission,
+} from '@vendure/core';
 
 interface AdminToolResult {
     summary: string;
@@ -10,7 +18,11 @@ export class AdminStaffTools {
 
     constructor(
         private connection: TransactionalConnection,
+        private administratorService: AdministratorService,
+        private roleService: RoleService,
     ) {}
+
+    // ─── Read operations ────────────────────────────────────────────────
 
     async getAdministrators(
         ctx: RequestContext,
@@ -105,6 +117,189 @@ export class AdminStaffTools {
         } catch (e) {
             this.logger.error(`Error fetching roles: ${e}`);
             return { summary: 'Error fetching roles. Please try again.' };
+        }
+    }
+
+    // ─── Administrator mutations ────────────────────────────────────────
+
+    async createAdministrator(
+        ctx: RequestContext,
+        args: {
+            firstName: string;
+            lastName: string;
+            emailAddress: string;
+            password: string;
+            roleIds: string[];
+        },
+    ): Promise<AdminToolResult> {
+        try {
+            const input = {
+                firstName: args.firstName,
+                lastName: args.lastName,
+                emailAddress: args.emailAddress,
+                password: args.password,
+                roleIds: args.roleIds,
+            };
+
+            const result = await this.administratorService.create(ctx, input);
+
+            const firstName = (result as any).firstName ?? '';
+            const lastName = (result as any).lastName ?? '';
+            return { summary: `Administrator "${firstName} ${lastName}" created successfully (ID: ${result.id}).` };
+        } catch (e) {
+            this.logger.error(`Error creating administrator: ${e}`);
+            return { summary: `Error creating administrator: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async updateAdministrator(
+        ctx: RequestContext,
+        args: {
+            administratorId: string;
+            firstName?: string;
+            lastName?: string;
+            emailAddress?: string;
+            password?: string;
+            roleIds?: string[];
+        },
+    ): Promise<AdminToolResult> {
+        try {
+            const input: any = {
+                id: args.administratorId,
+            };
+
+            if (args.firstName !== undefined) input.firstName = args.firstName;
+            if (args.lastName !== undefined) input.lastName = args.lastName;
+            if (args.emailAddress !== undefined) input.emailAddress = args.emailAddress;
+            if (args.password !== undefined) input.password = args.password;
+            if (args.roleIds !== undefined) input.roleIds = args.roleIds;
+
+            const result = await this.administratorService.update(ctx, input);
+
+            const firstName = (result as any).firstName ?? '';
+            const lastName = (result as any).lastName ?? '';
+            return { summary: `Administrator "${firstName} ${lastName}" (ID: ${result.id}) updated successfully.` };
+        } catch (e) {
+            this.logger.error(`Error updating administrator: ${e}`);
+            return { summary: `Error updating administrator: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async deleteAdministrator(
+        ctx: RequestContext,
+        args: { administratorId: string },
+    ): Promise<AdminToolResult> {
+        try {
+            const result = await this.administratorService.softDelete(ctx, args.administratorId);
+
+            if (result.result === 'DELETED') {
+                return { summary: `Administrator (ID: ${args.administratorId}) deleted successfully.` };
+            }
+
+            return { summary: `Failed to delete administrator (ID: ${args.administratorId}).` };
+        } catch (e) {
+            this.logger.error(`Error deleting administrator: ${e}`);
+            return { summary: `Error deleting administrator: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    // ─── Role mutations ─────────────────────────────────────────────────
+
+    async createRole(
+        ctx: RequestContext,
+        args: {
+            code: string;
+            description: string;
+            permissions: string[];
+            channelIds?: string[];
+        },
+    ): Promise<AdminToolResult> {
+        const validPermissions = Object.values(Permission);
+        const validated: Permission[] = [];
+        const invalid: string[] = [];
+
+        for (const p of args.permissions) {
+            if (validPermissions.includes(p as Permission)) {
+                validated.push(p as Permission);
+            } else {
+                invalid.push(p);
+            }
+        }
+
+        if (invalid.length > 0) {
+            return {
+                summary: `Invalid permission(s): ${invalid.join(', ')}. Valid permissions are: ${validPermissions.join(', ')}`,
+            };
+        }
+
+        try {
+            const result = await this.roleService.create(ctx, {
+                code: args.code,
+                description: args.description,
+                permissions: validated,
+                channelIds: args.channelIds,
+            });
+
+            const code = (result as any).code ?? args.code;
+            return { summary: `Role "${code}" created successfully (ID: ${result.id}) with ${validated.length} permission(s): ${validated.join(', ')}.` };
+        } catch (e) {
+            this.logger.error(`Error creating role: ${e}`);
+            return { summary: `Error creating role: ${e instanceof Error ? e.message : 'Unknown error'}. Valid permissions are: ${validPermissions.join(', ')}` };
+        }
+    }
+
+    async updateRole(
+        ctx: RequestContext,
+        args: {
+            roleId: string;
+            code?: string;
+            description?: string;
+            permissions?: string[];
+            channelIds?: string[];
+        },
+    ): Promise<AdminToolResult> {
+        if (args.permissions) {
+            const validPermissions = Object.values(Permission);
+            const invalid = args.permissions.filter(p => !validPermissions.includes(p as Permission));
+            if (invalid.length > 0) {
+                return {
+                    summary: `Invalid permission(s): ${invalid.join(', ')}. Valid permissions are: ${validPermissions.join(', ')}`,
+                };
+            }
+        }
+
+        try {
+            const input: any = { id: args.roleId };
+            if (args.code !== undefined) input.code = args.code;
+            if (args.description !== undefined) input.description = args.description;
+            if (args.permissions !== undefined) input.permissions = args.permissions as Permission[];
+            if (args.channelIds !== undefined) input.channelIds = args.channelIds;
+
+            const result = await this.roleService.update(ctx, input);
+
+            const code = (result as any).code ?? '';
+            return { summary: `Role "${code}" (ID: ${result.id}) updated successfully.` };
+        } catch (e) {
+            this.logger.error(`Error updating role: ${e}`);
+            return { summary: `Error updating role: ${e instanceof Error ? e.message : 'Unknown error'}` };
+        }
+    }
+
+    async deleteRole(
+        ctx: RequestContext,
+        args: { roleId: string },
+    ): Promise<AdminToolResult> {
+        try {
+            const result = await this.roleService.delete(ctx, args.roleId);
+
+            if (result.result === 'DELETED') {
+                return { summary: `Role (ID: ${args.roleId}) deleted successfully.` };
+            }
+
+            return { summary: `Failed to delete role (ID: ${args.roleId}): ${result.message ?? 'Unknown error'}` };
+        } catch (e) {
+            this.logger.error(`Error deleting role: ${e}`);
+            return { summary: `Error deleting role: ${e instanceof Error ? e.message : 'Unknown error'}` };
         }
     }
 }
