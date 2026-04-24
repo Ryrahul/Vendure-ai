@@ -3,6 +3,5 @@
   "framework": "nextjs",
   "buildCommand": "npm run build -w @rahul_vendure/ai-chat-react && npm run build -w storefront",
   "outputDirectory": "apps/storefront/.next",
-  "installCommand": "npm ci",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/storefront/ packages/ai-chat-react/ package.json package-lock.json"
+  "installCommand": "npm ci"
 }
