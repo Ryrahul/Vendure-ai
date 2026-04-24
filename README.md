@@ -15,7 +15,7 @@ ai-vendure/
 ```
 
 ## Getting Started
-
+ 
 ### Development
 
 Start both the server and storefront in development mode:
