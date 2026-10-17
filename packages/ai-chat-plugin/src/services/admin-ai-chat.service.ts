@@ -5,7 +5,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createAzure } from '@ai-sdk/azure';
 import { z } from 'zod';
 import {
-    RequestContext, TransactionalConnection, ConfigService,
+    ID, RequestContext, TransactionalConnection, ConfigService,
     ProductService, ProductVariantService, ProductOptionGroupService, ProductOptionService,
     TaxCategoryService, CustomerService, CollectionService,
     FacetService, FacetValueService, ShippingMethodService, PaymentMethodService,
@@ -20,7 +20,13 @@ import { ProductEmbeddingService } from './product-embedding.service';
 import { CollectionEmbeddingService } from './collection-embedding.service';
 import { ChatResultMapper } from './chat-result-mapper';
 import { AdminProductTools } from './admin-tools/admin-product-tools';
-import { restrictAdminTools } from './admin-tool-permissions';
+import {
+    canUseAdminTool,
+    DEFAULT_ADMIN_TOOLS_REQUIRING_CONFIRMATION,
+    describeAdminAction,
+    restrictAdminTools,
+} from './admin-tool-permissions';
+import { AdminConfirmationService, type PendingAdminAction, type PendingAdminActionView } from './admin-confirmation.service';
 import { AdminOrderTools } from './admin-tools/admin-order-tools';
 import { AdminCustomerTools } from './admin-tools/admin-customer-tools';
 import { AdminCollectionTools } from './admin-tools/admin-collection-tools';
@@ -45,6 +51,23 @@ export interface AdminChatResult {
     orders?: AiChatOrder[];
     navigateTo?: string;
     usage?: AiTokenUsage;
+    /** Actions the assistant requested that wait for the administrator to press Confirm. */
+    pendingConfirmations?: PendingAdminActionView[];
+}
+
+/** Who is chatting, so requested actions can be bound to them. */
+export interface AdminChatMeta {
+    administratorId: ID;
+    sessionId?: string;
+}
+
+/** Outcome of running a confirmed action. */
+export interface ConfirmedActionResult {
+    success: boolean;
+    summary: string;
+    products?: AiChatProduct[];
+    collections?: AiChatCollection[];
+    orders?: AiChatOrder[];
 }
 
 @Injectable()
@@ -103,6 +126,7 @@ export class AdminAiChatService implements OnModuleInit {
         private assetService: AssetService,
         private customerGroupService: CustomerGroupService,
         private stockLocationService: StockLocationService,
+        private confirmations: AdminConfirmationService,
     ) {
         this.openai = createOpenAI({ apiKey: options.openaiApiKey });
         if (options.azureOpenai) {
@@ -304,6 +328,7 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
         userMessage: string,
         conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
         currentPage?: string,
+        meta?: AdminChatMeta,
     ): Promise<AdminChatResult> {
         let systemPrompt = ADMIN_SYSTEM_PROMPT;
         const page = sanitizeDashboardPath(currentPage);
@@ -317,8 +342,7 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             { role: 'user', content: userMessage },
         ];
 
-        // Only offer tools the administrator is permitted to use in the active channel.
-        const tools = restrictAdminTools(ctx, this.buildTools(ctx));
+        const tools = this.getTools(ctx, meta);
 
         // Try OpenAI first, fall back to Azure if available
         try {
@@ -336,6 +360,66 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             }
             throw primaryError;
         }
+    }
+
+    /**
+     * The tools offered to the model: only those the administrator may use in the active
+     * channel, with destructive ones turned into confirmation requests.
+     */
+    getTools(ctx: RequestContext, meta?: AdminChatMeta): ToolSet {
+        const confirmationTools = new Set(
+            this.options.adminToolsRequiringConfirmation ?? DEFAULT_ADMIN_TOOLS_REQUIRING_CONFIRMATION,
+        );
+        return restrictAdminTools(ctx, this.buildTools(ctx), {
+            requiresConfirmation: name => confirmationTools.has(name),
+            onConfirmationRequired: async (toolName, input) => {
+                if (!meta) {
+                    return { summary: `${toolName} needs to be confirmed in the dashboard and cannot run here.` };
+                }
+                const description = describeAdminAction(toolName, input);
+                const action = await this.confirmations.request({
+                    administratorId: meta.administratorId,
+                    channelId: ctx.channelId,
+                    sessionId: meta.sessionId,
+                    toolName,
+                    input,
+                    description,
+                });
+                return {
+                    confirmationRequired: true,
+                    confirmation: { id: action.id, toolName, description },
+                    summary:
+                        `NOT DONE YET — "${description}" needs the administrator's confirmation. ` +
+                        'A Confirm / Cancel prompt is shown below your reply. Tell them what will happen and ask them to ' +
+                        'press Confirm. Never say it has been done, and do not request it again.',
+                };
+            },
+        });
+    }
+
+    /**
+     * Runs an action after the administrator confirmed it. Permissions are checked again
+     * against the administrator's current roles, and the action runs in a transaction in
+     * the channel it was requested in.
+     */
+    async executeConfirmed(ctx: RequestContext, action: PendingAdminAction): Promise<ConfirmedActionResult> {
+        if (String(ctx.channelId) !== action.channelId) {
+            return { success: false, summary: 'This action was requested in another channel. Switch back to that channel to confirm it.' };
+        }
+        if (!canUseAdminTool(ctx, action.toolName)) {
+            return { success: false, summary: `You no longer have permission to ${describeAdminAction(action.toolName, {}).toLowerCase()}.` };
+        }
+        const output: any = await this.connection.withTransaction(ctx, async txCtx => {
+            const tool = this.buildTools(txCtx)[action.toolName] as any;
+            return tool.execute(action.input, { toolCallId: `confirmed-${action.id}`, messages: [] });
+        });
+        return {
+            success: !output?.error,
+            summary: String(output?.summary ?? 'Done.'),
+            ...(output?.products?.length ? { products: output.products } : {}),
+            ...(output?.collections?.length ? { collections: output.collections } : {}),
+            ...(output?.orders?.length ? { orders: output.orders } : {}),
+        };
     }
 
     private async runChat(
@@ -368,6 +452,7 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
         let allCollections: AiChatCollection[] = [];
         let allOrders: AiChatOrder[] = [];
         let navigateTo: string | undefined;
+        const pendingConfirmations: PendingAdminActionView[] = [];
 
         for (const step of steps) {
             for (const toolResult of step.toolResults) {
@@ -385,6 +470,9 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
                 if (data.navigateTo) {
                     navigateTo = data.navigateTo;
                 }
+                if (data.confirmation?.id) {
+                    pendingConfirmations.push(data.confirmation);
+                }
             }
         }
 
@@ -394,6 +482,7 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             collections: allCollections.slice(0, 5),
             orders: allOrders.length > 0 ? allOrders : undefined,
             navigateTo,
+            ...(pendingConfirmations.length ? { pendingConfirmations } : {}),
             usage: {
                 inputTokens: usage.inputTokens ?? 0,
                 outputTokens: usage.outputTokens ?? 0,

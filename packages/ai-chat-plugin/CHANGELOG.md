@@ -12,6 +12,10 @@
 - **Coupon codes are no longer revealed** by `getAvailablePromotions` unless `exposeCouponCodes: true`, and promotions are limited to the shopper's channel (previously every channel's codes were returned).
 - Client-supplied history can no longer inject `system` messages; history and message length are capped. `currentPage` is validated before it reaches the admin system prompt. The system prompt tells the model to treat tool output as data.
 
+### Added
+
+- **Human confirmation for destructive admin actions.** Deletes and changes to administrators, roles, channels, global settings and payment methods are never executed by the model: the tool call creates a pending action and the dashboard shows Confirm / Cancel. Only `POST /admin-ai-chat/confirm` (the button, which the model cannot call) runs it — bound to the requesting administrator, single-use, expiring after 10 minutes, re-checking permissions, refusing other channels, and running in a transaction. `POST /admin-ai-chat/cancel` discards it. Outcomes are recorded in the chat session. Configure with `adminToolsRequiringConfirmation`.
+
 ### Changed
 
 - **Product search uses the store's configured search engine** through the Shop API (DefaultSearchPlugin, Elasticsearch, Typesense, Meilisearch, …) instead of a private deep import of DefaultSearchPlugin with an unscoped raw-SQL fallback. Channel, language, currency, enabled and deleted rules now always apply.
@@ -24,4 +28,4 @@
 
 ### Added
 
-- e2e test suite (`npm test`, Postgres + pgvector): storefront search, a custom search engine, security. Verified on Vendure 3.5.4 and 3.8.0.
+- e2e test suite (`npm test`, Postgres + pgvector): storefront search, a custom search engine, security, admin confirmations (35 tests), plus an opt-in real-model test (`OPENAI_API_KEY_E2E`). Verified on Vendure 3.5.4 and 3.8.0.

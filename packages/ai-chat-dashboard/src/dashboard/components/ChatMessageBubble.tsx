@@ -5,12 +5,14 @@ import { Bot, User } from 'lucide-react';
 import type { ChatMessage } from '../types';
 import { ProductCard } from './ProductCard';
 import { OrderCard } from './OrderCard';
+import { ConfirmationCard } from './ConfirmationCard';
 
 interface ChatMessageBubbleProps {
     message: ChatMessage;
+    onResolveConfirmation?: (confirmationId: string, decision: 'confirm' | 'cancel') => void;
 }
 
-export function ChatMessageBubble({ message }: ChatMessageBubbleProps) {
+export function ChatMessageBubble({ message, onResolveConfirmation }: ChatMessageBubbleProps) {
     const isUser = message.role === 'user';
 
     if (isUser) {
@@ -59,6 +61,20 @@ export function ChatMessageBubble({ message }: ChatMessageBubbleProps) {
                     </div>
                 </div>
             </div>
+
+            {/* Actions awaiting the administrator's confirmation */}
+            {message.pendingConfirmations && message.pendingConfirmations.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border, #e2e8f0)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {message.pendingConfirmations.map(c => (
+                        <ConfirmationCard
+                            key={c.id}
+                            confirmation={c}
+                            onConfirm={() => onResolveConfirmation?.(c.id, 'confirm')}
+                            onCancel={() => onResolveConfirmation?.(c.id, 'cancel')}
+                        />
+                    ))}
+                </div>
+            )}
 
             {/* Attached cards */}
             {(message.products?.length || message.orders?.length) ? (

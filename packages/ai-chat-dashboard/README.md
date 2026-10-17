@@ -12,12 +12,14 @@ AI chat assistant widget for the [Vendure](https://www.vendure.io/) admin dashbo
 - **Collection Browser** — List and search product categories
 - **Markdown Rendering** — AI responses rendered with `react-markdown` + GitHub-flavored tables
 - **Multi-turn Conversations** — Conversation history maintained across messages
+- **Confirm before destructive actions** — when the assistant wants to delete something or change staff, roles, channels, settings or payment methods, a Confirm / Cancel card appears; nothing runs until you press Confirm
 - **Dashboard Theme** — Uses Vendure dashboard CSS variables, matches light/dark theme
 
 ## Requirements
 
 - Vendure `>=3.0.0` with the React-based `@vendure/dashboard` (`>=3.5.0`)
-- [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) — provides the backend AI service and REST endpoint
+- [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) `>=0.3.0` — provides the backend AI service and REST endpoints
+- Administrators need the `UseAiAdminAssistant` permission (SuperAdmins have it) plus the usual permission for each action
 - `DashboardPlugin` must be configured in your Vendure config
 
 ## Installation

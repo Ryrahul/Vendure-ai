@@ -20,7 +20,8 @@ import {
     sanitizeHistory,
     type AiAssistantPluginOptions,
 } from '../constants';
-import { AdminAiChatService, AdminChatResult } from '../services/admin-ai-chat.service';
+import { AdminAiChatService, AdminChatResult, ConfirmedActionResult } from '../services/admin-ai-chat.service';
+import { AdminConfirmationService } from '../services/admin-confirmation.service';
 import { AiChatHistoryService } from '../services/ai-chat-history.service';
 
 export interface AdminChatRequest {
@@ -32,6 +33,10 @@ export interface AdminChatRequest {
 
 export interface AdminChatResponse extends AdminChatResult {
     sessionId?: string;
+}
+
+export interface AdminConfirmRequest {
+    confirmationId: string;
 }
 
 const MAX_ADMIN_MESSAGE_LENGTH = 8000;
@@ -53,6 +58,7 @@ export class AdminChatController {
         private adminAiChatService: AdminAiChatService,
         private chatHistoryService: AiChatHistoryService,
         private administratorService: AdministratorService,
+        private confirmations: AdminConfirmationService,
     ) {}
 
     @Post('chat')
@@ -82,7 +88,10 @@ export class AdminChatController {
             ? sanitizeHistory(existingSession.messages, maxHistory)
             : sanitizeHistory(body.history, maxHistory);
 
-        const result = await this.adminAiChatService.chat(ctx, message, history, body.currentPage);
+        const result = await this.adminAiChatService.chat(ctx, message, history, body.currentPage, {
+            administratorId,
+            sessionId,
+        });
 
         const model = this.options.azureOpenai ? this.options.azureOpenai.deploymentName : (this.options.chatModel ?? 'gpt-4o-mini');
         try {
@@ -104,6 +113,57 @@ export class AdminChatController {
         }
 
         return { ...result, sessionId };
+    }
+
+    /**
+     * Runs an action the assistant requested, after the administrator pressed Confirm.
+     * Only the administrator who requested it can confirm, once, within 10 minutes.
+     */
+    @Post('confirm')
+    @Allow(aiAdminAssistantPermission.Permission)
+    async confirm(@Ctx() ctx: RequestContext, @Body() body: AdminConfirmRequest): Promise<ConfirmedActionResult> {
+        const administratorId = await this.requireAdministratorId(ctx);
+        const action = await this.confirmations.take(administratorId, body?.confirmationId);
+        if (!action) {
+            throw new NotFoundException('This action has expired or was already handled. Ask the assistant again.');
+        }
+        const result = await this.adminAiChatService.executeConfirmed(ctx, action);
+        await this.recordOutcome(ctx, administratorId, action.sessionId, `Confirmed: ${action.description}`, result.summary);
+        return result;
+    }
+
+    /** Discards an action the assistant requested. */
+    @Post('cancel')
+    @Allow(aiAdminAssistantPermission.Permission)
+    async cancel(@Ctx() ctx: RequestContext, @Body() body: AdminConfirmRequest): Promise<{ success: boolean }> {
+        const administratorId = await this.requireAdministratorId(ctx);
+        const action = await this.confirmations.take(administratorId, body?.confirmationId);
+        if (!action) {
+            throw new NotFoundException('This action has expired or was already handled.');
+        }
+        await this.recordOutcome(ctx, administratorId, action.sessionId, `Cancelled: ${action.description}`, 'Cancelled — nothing was changed.');
+        return { success: true };
+    }
+
+    /** Adds the outcome to the chat session so the assistant knows it on the next turn. */
+    private async recordOutcome(ctx: RequestContext, administratorId: ID, sessionId: string | undefined, userMessage: string, assistantMessage: string) {
+        if (!sessionId || !(await this.findOwnSession(sessionId, administratorId))) {
+            return;
+        }
+        try {
+            await this.chatHistoryService.appendMessage({
+                sessionId,
+                administratorId: administratorId as number,
+                channelId: ctx.channelId as number,
+                model: 'confirmation',
+                userMessage,
+                assistantMessage,
+                inputTokens: 0,
+                outputTokens: 0,
+            });
+        } catch (e) {
+            this.logger.error(`Failed to record confirmation outcome: ${e}`);
+        }
     }
 
     @Get('sessions')

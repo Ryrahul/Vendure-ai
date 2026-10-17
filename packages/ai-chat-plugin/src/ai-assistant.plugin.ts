@@ -19,6 +19,7 @@ import { AiAssistantResolver } from './api/ai-assistant.resolver';
 import { AiAssistantController } from './controllers/ai-assistant.controller';
 import { AdminChatController } from './controllers/admin-chat.controller';
 import { AdminAiChatService } from './services/admin-ai-chat.service';
+import { AdminConfirmationService } from './services/admin-confirmation.service';
 import { AiChatHistoryService } from './services/ai-chat-history.service';
 import { AI_ASSISTANT_OPTIONS, aiAdminAssistantPermission, type AiAssistantPluginOptions } from './constants';
 import { embedAllSchemaExtension } from './api/schema-extensions';
@@ -47,6 +48,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         StorefrontApiService,
         AiChatService,
         AdminAiChatService,
+        AdminConfirmationService,
         AiChatHistoryService,
         ConversationCacheService,
         ProductEmbeddingHandler,

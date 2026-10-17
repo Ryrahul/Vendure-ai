@@ -106,6 +106,7 @@ See the [`@rahul_vendure/ai-chat-react` README](https://www.npmjs.com/package/@r
 | `maxHistoryMessages` | `number` | No | `20` | Max previous messages sent to the model per turn |
 | `enableConversationCache` | `boolean` | No | `true` | Cache shop conversations server-side (scoped to the customer or session) |
 | `azureOpenai` | `object` | No | — | Azure OpenAI fallback for chat |
+| `adminToolsRequiringConfirmation` | `string[]` | No | deletes + staff/roles/channels/settings/payment changes | Admin tools that only run after the administrator presses Confirm |
 
 ## Search
 
@@ -214,6 +215,7 @@ The plugin also includes a built-in admin chat endpoint at `POST /admin-ai-chat/
 - Each admin tool requires the same permission as the equivalent Admin API operation in the active channel (e.g. `createAdministrator` needs `CreateAdministrator`). Tools the administrator may not use are not offered to the model at all.
 - Chat sessions are private: administrators can only list, read, continue or delete their own.
 - `triggerEmbedAll` requires `UpdateCatalog` or `UpdateProduct`.
+- **Destructive actions need a human click.** Deletes and changes to administrators, roles, channels, global settings and payment methods are only *requested* by the model; the dashboard shows Confirm / Cancel and the action runs via `POST /admin-ai-chat/confirm` (which the model cannot call). Pending actions belong to the requesting administrator, are single-use, expire after 10 minutes, and run in a transaction. Set `adminToolsRequiringConfirmation` to change the list (`[]` disables).
 
 Some of the admin tools:
 

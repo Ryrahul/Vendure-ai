@@ -58,6 +58,13 @@ export interface AiAssistantPluginOptions {
      * @default 20
      */
     maxHistoryMessages?: number;
+    /**
+     * Admin tools that the assistant may only *request*: they run after the administrator
+     * presses Confirm in the dashboard. Defaults to every delete plus changes to
+     * administrators, roles, channels, global settings and payment methods
+     * (see DEFAULT_ADMIN_TOOLS_REQUIRING_CONFIRMATION). Pass `[]` to disable.
+     */
+    adminToolsRequiringConfirmation?: string[];
     embeddingModel?: string;
     /**
      * Base URL for product asset images. Should match your AssetServerPlugin's

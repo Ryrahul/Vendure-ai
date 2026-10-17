@@ -124,6 +124,34 @@ export const ADMIN_TOOL_PERMISSIONS: Record<string, P[]> = {
     navigateToPage: [],
 };
 
+/**
+ * Admin tools that are never executed straight from the model: they are destructive, or
+ * change who can do what (staff, roles, channels, settings, payment). The model can only
+ * request them; a human must press Confirm in the dashboard. Override with the
+ * `adminToolsRequiringConfirmation` plugin option.
+ */
+export const DEFAULT_ADMIN_TOOLS_REQUIRING_CONFIRMATION: string[] = [
+    ...Object.keys(ADMIN_TOOL_PERMISSIONS).filter(name => name.startsWith('delete')),
+    'removeMembersFromZone',
+    'removeCustomersFromGroup',
+    'createAdministrator',
+    'updateAdministrator',
+    'createRole',
+    'updateRole',
+    'updateGlobalSettings',
+    'createChannel',
+    'updateChannel',
+    'createPaymentMethod',
+    'updatePaymentMethod',
+];
+
+export interface RestrictAdminToolsOptions {
+    /** Tool names that must be confirmed by a human before they run. */
+    requiresConfirmation?: (toolName: string) => boolean;
+    /** Called instead of executing a tool that requires confirmation; its result goes to the model. */
+    onConfirmationRequired?: (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+}
+
 export function canUseAdminTool(ctx: RequestContext, toolName: string): boolean {
     const required = ADMIN_TOOL_PERMISSIONS[toolName];
     if (!required) {
@@ -139,26 +167,50 @@ export function canUseAdminTool(ctx: RequestContext, toolName: string): boolean 
  * Returns only the tools the administrator may use in the active channel, each wrapped so
  * the permission is re-checked when executed. Hidden tools are never offered to the model.
  */
-export function restrictAdminTools(ctx: RequestContext, tools: ToolSet): ToolSet {
+export function restrictAdminTools(ctx: RequestContext, tools: ToolSet, restrictOptions: RestrictAdminToolsOptions = {}): ToolSet {
     const allowed: ToolSet = {};
     for (const [name, definition] of Object.entries(tools)) {
         if (!canUseAdminTool(ctx, name)) {
             continue;
         }
         const execute = (definition as any).execute;
+        const needsConfirmation = !!restrictOptions.requiresConfirmation?.(name);
         allowed[name] = {
             ...definition,
+            ...(needsConfirmation
+                ? {
+                      description:
+                          `${(definition as any).description ?? ''} ` +
+                          'Calling this does NOT perform the action: it shows the administrator a Confirm button. ' +
+                          'Call it directly when asked; do not ask for confirmation in text first.',
+                  }
+                : {}),
             ...(execute
                 ? {
-                      execute: (input: unknown, options: unknown) => {
+                      execute: (input: unknown, executeOptions: unknown) => {
                           if (!canUseAdminTool(ctx, name)) {
                               return { error: 'FORBIDDEN', summary: `You do not have permission to use ${name}.` };
                           }
-                          return execute(input, options);
+                          if (restrictOptions.requiresConfirmation?.(name) && restrictOptions.onConfirmationRequired) {
+                              return restrictOptions.onConfirmationRequired(name, (input ?? {}) as Record<string, unknown>);
+                          }
+                          return execute(input, executeOptions);
                       },
                   }
                 : {}),
         } as any;
     }
     return allowed;
+}
+
+/** "deleteProduct", { productId: "5" } → "Delete product (productId: 5)" */
+export function describeAdminAction(toolName: string, input: Record<string, unknown>): string {
+    const words = toolName.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+    const label = words.charAt(0).toUpperCase() + words.slice(1);
+    const args = Object.entries(input)
+        .filter(([key, value]) => value !== undefined && value !== null && !/password/i.test(key))
+        .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+        .join(', ');
+    const text = args ? `${label} (${args})` : label;
+    return text.length > 300 ? `${text.slice(0, 297)}...` : text;
 }

@@ -33,7 +33,7 @@ function LoadingDots() {
 export function AdminChatWidget() {
     const {
         messages, input, setInput, isLoading, scrollRef,
-        sendMessage, sessionId, newConversation, loadSession,
+        sendMessage, sessionId, newConversation, loadSession, resolveConfirmation,
     } = useAdminChat();
 
     const { sessions, refresh: refreshSessions, deleteSession } = useSessionList();
@@ -95,7 +95,11 @@ export function AdminChatWidget() {
                         <div style={{ maxWidth: 768, margin: '0 auto', padding: '0 20px' }}>
                             <div style={{ padding: '16px 0' }}>
                                 {messages.map(msg => (
-                                    <ChatMessageBubble key={msg.id} message={msg} />
+                                    <ChatMessageBubble
+                                        key={msg.id}
+                                        message={msg}
+                                        onResolveConfirmation={(id, decision) => resolveConfirmation(msg.id, id, decision)}
+                                    />
                                 ))}
                                 {isLoading && <LoadingDots />}
                                 <div ref={scrollRef} style={{ height: 32 }} />

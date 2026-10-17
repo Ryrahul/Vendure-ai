@@ -1,5 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import type { ChatMessage } from '../types';
+import type { ChatMessage, PendingConfirmation } from '../types';
+
+function authHeaders(json = false): Record<string, string> {
+    const headers: Record<string, string> = json ? { 'Content-Type': 'application/json' } : {};
+    const sessionToken = localStorage.getItem('vendure-session-token');
+    const channelToken = localStorage.getItem('vendure-selected-channel-token');
+    if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+    if (channelToken) headers['vendure-token'] = channelToken;
+    return headers;
+}
 
 function generateSessionId(): string {
     return `admin-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -98,6 +107,10 @@ export function useAdminChat() {
                         products: data.products,
                         collections: data.collections,
                         orders: data.orders,
+                        pendingConfirmations: (data.pendingConfirmations ?? []).map((c: PendingConfirmation) => ({
+                            ...c,
+                            status: 'pending',
+                        })),
                     },
                 ]);
 
@@ -124,9 +137,52 @@ export function useAdminChat() {
         [isLoading, messages, sessionId],
     );
 
+    /**
+     * Confirms or cancels an action the assistant requested. This is the only way a
+     * destructive action runs: the model itself cannot call this endpoint.
+     */
+    const resolveConfirmation = useCallback(
+        async (messageId: string, confirmationId: string, decision: 'confirm' | 'cancel') => {
+            const update = (patch: Partial<PendingConfirmation>) =>
+                setMessages(prev =>
+                    prev.map(m =>
+                        m.id !== messageId
+                            ? m
+                            : {
+                                  ...m,
+                                  pendingConfirmations: m.pendingConfirmations?.map(c =>
+                                      c.id === confirmationId ? { ...c, ...patch } : c,
+                                  ),
+                              },
+                    ),
+                );
+            update({ status: 'working' });
+            try {
+                const res = await fetch(`/admin-ai-chat/${decision}`, {
+                    method: 'POST',
+                    headers: authHeaders(true),
+                    credentials: 'include',
+                    body: JSON.stringify({ confirmationId }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    update({ status: 'failed', result: data?.message ?? 'This action expired or was already handled.' });
+                } else if (decision === 'cancel') {
+                    update({ status: 'cancelled', result: 'Cancelled — nothing was changed.' });
+                } else {
+                    update({ status: data.success ? 'confirmed' : 'failed', result: data.summary });
+                }
+            } catch (err) {
+                update({ status: 'failed', result: err instanceof Error ? err.message : 'Request failed' });
+            }
+        },
+        [],
+    );
+
     return {
         messages,
         input,
+        resolveConfirmation,
         setInput,
         isLoading,
         scrollRef,
