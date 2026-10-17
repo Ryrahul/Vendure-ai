@@ -5,7 +5,7 @@ import { toModelInput } from './prompt-utils';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAzure } from '@ai-sdk/azure';
 import { z } from 'zod';
-import { RequestContext, TransactionalConnection, OrderService, CustomerService, ConfigService } from '@vendure/core';
+import { ActiveOrderService, RequestContext, TransactionalConnection, OrderService, CustomerService, ConfigService } from '@vendure/core';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions, MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS } from '../constants';
 import { EmbeddingService } from './embedding.service';
 import { ProductEmbeddingService } from './product-embedding.service';
@@ -13,6 +13,8 @@ import { CollectionEmbeddingService } from './collection-embedding.service';
 import { ChatResultMapper } from './chat-result-mapper';
 import { StorefrontApiService } from './storefront-api.service';
 import { SearchTools } from './tools/search-tools';
+import { ActiveOrderLookup } from './tools/active-order-lookup';
+import { SHOP_WRITE_TOOLS, withWriteTransactions } from './tool-transactions';
 import { CartTools } from './tools/cart-tools';
 import { OrderTools } from './tools/order-tools';
 import { CheckoutTools } from './tools/checkout-tools';
@@ -83,6 +85,7 @@ export class AiChatService implements OnModuleInit {
         private customerService: CustomerService,
         private configService: ConfigService,
         private storefrontApiService: StorefrontApiService,
+        private activeOrderService: ActiveOrderService,
     ) {
         this.openai = createOpenAI({ apiKey: options.openaiApiKey });
         if (options.azureOpenai) {
@@ -123,10 +126,11 @@ export class AiChatService implements OnModuleInit {
             this.collectionEmbeddingService,
             this.mapper,
         );
-        this.cartTools = new CartTools(this.connection, this.orderService, this.mapper);
+        const activeOrders = new ActiveOrderLookup(this.activeOrderService);
+        this.cartTools = new CartTools(this.connection, this.orderService, this.mapper, activeOrders);
         this.orderTools = new OrderTools(this.connection, this.mapper);
-        this.checkoutTools = new CheckoutTools(this.connection, this.orderService);
-        this.promotionTools = new PromotionTools(this.connection, this.orderService, this.options.exposeCouponCodes ?? false);
+        this.checkoutTools = new CheckoutTools(this.connection, this.orderService, activeOrders);
+        this.promotionTools = new PromotionTools(this.connection, this.orderService, activeOrders, this.options.exposeCouponCodes ?? false);
     }
 
     private buildTools(ctx: RequestContext, customerId?: string | number): ToolSet {
@@ -292,7 +296,7 @@ export class AiChatService implements OnModuleInit {
             { role: 'user', content: userMessage },
         ];
 
-        const tools = this.buildTools(ctx, customerId);
+        const tools = withWriteTransactions(this.connection, ctx, this.buildTools(ctx, customerId), name => SHOP_WRITE_TOOLS.has(name), txCtx => this.buildTools(txCtx, customerId));
 
         // OpenAI is primary model
         return streamText({
@@ -354,7 +358,7 @@ export class AiChatService implements OnModuleInit {
             { role: 'user', content: userMessage },
         ];
 
-        const tools = this.buildTools(ctx, customerId);
+        const tools = withWriteTransactions(this.connection, ctx, this.buildTools(ctx, customerId), name => SHOP_WRITE_TOOLS.has(name), txCtx => this.buildTools(txCtx, customerId));
 
         const result = streamText({
             model,
@@ -375,7 +379,7 @@ export class AiChatService implements OnModuleInit {
             },
         });
 
-        const [text, steps, usage] = await Promise.all([result.text, result.steps, result.usage]);
+        const [text, steps, usage] = await Promise.all([result.text, result.steps, result.totalUsage]);
 
         let allProducts: AiChatProduct[] = [];
         let allCollections: AiChatCollection[] = [];

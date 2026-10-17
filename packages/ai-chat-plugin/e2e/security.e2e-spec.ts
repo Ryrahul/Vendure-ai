@@ -1,6 +1,7 @@
 process.env.OPENAI_BASE_URL = 'http://127.0.0.1:9/v1';
 
 import {
+    ActiveOrderService,
     DefaultSearchPlugin,
     OrderService,
     RequestContext,
@@ -17,6 +18,7 @@ import { ADMIN_TOOL_PERMISSIONS, restrictAdminTools } from '../src/services/admi
 import { AiChatHistoryService } from '../src/services/ai-chat-history.service';
 import { ConversationCacheService } from '../src/services/conversation-cache.service';
 import { PromotionTools } from '../src/services/tools/promotion-tools';
+import { ActiveOrderLookup } from '../src/services/tools/active-order-lookup';
 import { createAiTestEnvironment, DEFAULT_CHANNEL_TOKEN, http, PORT, serverInitOptions } from './utils/test-environment';
 
 async function login(api: 'admin-api' | 'shop-api', username: string, password: string): Promise<string> {
@@ -241,7 +243,12 @@ describe('security', () => {
 
         async function promotions(expose: boolean) {
             const ctx = await server.app.get(RequestContextService).create({ apiType: 'shop', channelOrToken: DEFAULT_CHANNEL_TOKEN });
-            const tools = new PromotionTools(server.app.get(TransactionalConnection), server.app.get(OrderService), expose);
+            const tools = new PromotionTools(
+                server.app.get(TransactionalConnection),
+                server.app.get(OrderService),
+                new ActiveOrderLookup(server.app.get(ActiveOrderService)),
+                expose,
+            );
             return tools.getAvailablePromotions(ctx);
         }
 

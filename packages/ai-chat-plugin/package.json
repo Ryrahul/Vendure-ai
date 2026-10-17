@@ -1,6 +1,6 @@
 {
   "name": "@rahul_vendure/ai-chat-plugin",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "AI-powered shopping assistant plugin for Vendure \u2014 LLM chat, vector search, cart management, and order tracking",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

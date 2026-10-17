@@ -19,14 +19,15 @@ export class ProductEmbeddingService {
         ctx: RequestContext,
         productId: number,
         embedding: number[],
+        contentHash?: string,
     ): Promise<void> {
         await this.ensureRow(ctx, productId);
         const conn = this.connection.rawConnection;
         const vectorStr = toVectorStr(embedding);
         const schema = (conn.options as { schema?: string }).schema ?? 'public';
         await conn.query(
-            `UPDATE ${schema}.product_embedding SET embedding = $1::vector, "updatedAt" = NOW() WHERE "productId" = $2`,
-            [vectorStr, productId],
+            `UPDATE ${schema}.product_embedding SET embedding = $1::vector, "contentHash" = $3, "updatedAt" = NOW() WHERE "productId" = $2`,
+            [vectorStr, productId, contentHash ?? null],
         );
     }
 
@@ -62,6 +63,20 @@ export class ProductEmbeddingService {
             productId: r.productId,
             score: Number(r.score),
         }));
+    }
+
+    /** Content hashes of rows that already have an embedding, keyed by productId. */
+    async getEmbeddedHashes(productIds: number[]): Promise<Map<number, string | null>> {
+        if (!productIds.length) {
+            return new Map();
+        }
+        const conn = this.connection.rawConnection;
+        const schema = (conn.options as { schema?: string }).schema ?? 'public';
+        const rows: Array<{ id: number; hash: string | null }> = await conn.query(
+            `SELECT "productId" AS id, "contentHash" AS hash FROM ${schema}.product_embedding WHERE "productId" = ANY($1) AND embedding IS NOT NULL`,
+            [productIds],
+        );
+        return new Map(rows.map(r => [Number(r.id), r.hash]));
     }
 
     /** Ensure row exists (for migration that creates table with no embedding column initially). */

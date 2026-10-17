@@ -134,7 +134,7 @@ export class AdminProductTools {
             products,
             collections,
             summary: products.length > 0
-                ? `Found ${products.length} product(s) related to "${query}": ${products.map(p => `"${p.name}" (${formatPrice(p.price)})`).join(', ')}. Product cards with images are shown in the UI — keep your text brief.`
+                ? `Found ${products.length} product(s) related to "${query}": ${products.map(p => `"${p.name}" (${formatPrice(p.price, ctx.currencyCode)})`).join(', ')}. Product cards with images are shown in the UI — keep your text brief.`
                 : `No products found related to "${query}".`,
         };
     }
@@ -179,7 +179,7 @@ export class AdminProductTools {
             const sku = v.sku ?? '';
             const levels = v.stockLevels ?? [];
             const stockOnHand = levels.reduce((s: number, sl: any) => s + (sl.stockOnHand ?? 0), 0);
-            return `${vName} (SKU: ${sku}, ${formatPrice(priceVal)}, stock: ${stockOnHand})`;
+            return `${vName} (SKU: ${sku}, ${formatPrice(priceVal, ctx.currencyCode)}, stock: ${stockOnHand})`;
         }).join('; ');
 
         const descSnippet = description.length > 200 ? description.substring(0, 200) + '...' : description;

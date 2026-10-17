@@ -26,6 +26,19 @@ export function formatPrice(cents: number, currencyCode = 'USD'): string {
     }
 }
 
+export interface ChatLimitsOptions {
+    /** Messages per minute per shopper (customer, else session). 0 disables. @default 20 */
+    shopMessagesPerMinute?: number;
+    /** Messages per minute per IP address across all shoppers on it. 0 disables. @default 60 */
+    shopMessagesPerMinutePerIp?: number;
+    /** Model tokens (input + output) per shopper per UTC day. 0 disables. @default 200000 */
+    shopTokensPerDay?: number;
+    /** Messages per minute per administrator. 0 disables. @default 30 */
+    adminMessagesPerMinute?: number;
+    /** Model tokens per administrator per UTC day. 0 disables. @default 1000000 */
+    adminTokensPerDay?: number;
+}
+
 export interface AiAssistantPluginOptions {
     openaiApiKey: string;
     /**
@@ -65,6 +78,11 @@ export interface AiAssistantPluginOptions {
      * (see DEFAULT_ADMIN_TOOLS_REQUIRING_CONFIRMATION). Pass `[]` to disable.
      */
     adminToolsRequiringConfirmation?: string[];
+    /**
+     * Message rate limits and daily token budgets for shoppers and administrators.
+     * Exceeding them returns HTTP 429. Set a value to 0 to disable that limit.
+     */
+    limits?: ChatLimitsOptions;
     embeddingModel?: string;
     /**
      * Base URL for product asset images. Should match your AssetServerPlugin's

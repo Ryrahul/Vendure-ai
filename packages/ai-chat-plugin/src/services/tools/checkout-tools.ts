@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, OrderService, Order, isGraphQlErrorResult } from '@vendure/core';
 import { formatPrice } from '../../constants';
 import type { ToolResult, SetShippingAddressAction, SetBillingAddressAction, SetShippingMethodAction } from '../types';
+import { ActiveOrderLookup, NO_CART_MESSAGE } from './active-order-lookup';
 
 export class CheckoutTools {
     private readonly logger = new Logger(CheckoutTools.name);
@@ -9,6 +10,7 @@ export class CheckoutTools {
     constructor(
         private connection: TransactionalConnection,
         private orderService: OrderService,
+        private activeOrders: ActiveOrderLookup,
     ) {}
 
     async getAvailableCountries(
@@ -43,13 +45,10 @@ export class CheckoutTools {
     async getEligibleShippingMethods(
         ctx: RequestContext,
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to view shipping methods.' };
-        }
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
             const methods = await this.orderService.getEligibleShippingMethods(ctx, order.id);
             const mapped = methods.map((m: any) => ({
@@ -63,7 +62,7 @@ export class CheckoutTools {
                 products: [],
                 collections: [],
                 summary: mapped.length > 0
-                    ? `Available shipping methods: ${mapped.map(m => `"${m.name}" (id: ${m.id}, price: ${formatPrice(m.priceWithTax)}, code: ${m.code})`).join(', ')}`
+                    ? `Available shipping methods: ${mapped.map(m => `"${m.name}" (id: ${m.id}, price: ${formatPrice(m.priceWithTax, ctx.currencyCode)}, code: ${m.code})`).join(', ')}`
                     : 'No shipping methods available. Make sure a shipping address is set first.',
             };
         } catch (e) {
@@ -75,13 +74,10 @@ export class CheckoutTools {
     async getEligiblePaymentMethods(
         ctx: RequestContext,
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to view payment methods.' };
-        }
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
             const methods = await this.orderService.getEligiblePaymentMethods(ctx, order.id);
             const mapped = methods.map((m: any) => ({
@@ -113,13 +109,10 @@ export class CheckoutTools {
             countryCode: string; phoneNumber: string; company?: string;
         },
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to set a shipping address.' };
-        }
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
             // Validate required fields
             const required = ['fullName', 'streetLine1', 'city', 'province', 'postalCode', 'countryCode', 'phoneNumber'] as const;
@@ -164,13 +157,10 @@ export class CheckoutTools {
             countryCode: string; phoneNumber: string; company?: string;
         },
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to set a billing address.' };
-        }
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
             const required = ['fullName', 'streetLine1', 'city', 'province', 'postalCode', 'countryCode', 'phoneNumber'] as const;
             for (const field of required) {
@@ -209,13 +199,10 @@ export class CheckoutTools {
         ctx: RequestContext,
         params: { shippingMethodId: string },
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to set a shipping method.' };
-        }
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
             if (!params.shippingMethodId || !/^\d+$/.test(params.shippingMethodId)) {
                 return { products: [], collections: [], summary: 'Error: Invalid shippingMethodId. Use getEligibleShippingMethods first to get valid IDs.' };
@@ -231,7 +218,7 @@ export class CheckoutTools {
             return {
                 products: [],
                 collections: [],
-                summary: `Shipping method set successfully. Shipping cost: ${formatPrice(shippingCost)}. Order total: ${formatPrice((updatedOrder as any).totalWithTax ?? 0)}.`,
+                summary: `Shipping method set successfully. Shipping cost: ${formatPrice(shippingCost, ctx.currencyCode)}. Order total: ${formatPrice((updatedOrder as any).totalWithTax ?? 0, ctx.currencyCode)}.`,
                 setShippingMethodAction: { shippingMethodId: params.shippingMethodId },
             };
         } catch (e) {

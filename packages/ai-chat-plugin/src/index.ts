@@ -19,10 +19,12 @@ export type { SimilarProductResult } from './services/product-embedding.service'
 export type { SimilarVariantResult } from './services/variant-embedding.service';
 export type { SimilarCollectionResult } from './services/collection-embedding.service';
 export { AI_ASSISTANT_OPTIONS, EMBED_ALL_QUEUE_NAME, aiAdminAssistantPermission } from './constants';
+export type { ChatLimitsOptions } from './constants';
 export { StorefrontApiService } from './services/storefront-api.service';
 export type { StorefrontProduct, StorefrontCollection, StorefrontSearchInput } from './services/storefront-api.service';
 export { ADMIN_TOOL_PERMISSIONS, DEFAULT_ADMIN_TOOLS_REQUIRING_CONFIRMATION } from './services/admin-tool-permissions';
 export { AdminConfirmationService } from './services/admin-confirmation.service';
+export { ChatLimitsService } from './services/chat-limits.service';
 export type { PendingAdminAction, PendingAdminActionView } from './services/admin-confirmation.service';
 export { AiAssistantController } from './controllers/ai-assistant.controller';
 export { AdminChatController } from './controllers/admin-chat.controller';

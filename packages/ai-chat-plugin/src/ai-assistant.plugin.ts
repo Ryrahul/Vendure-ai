@@ -12,14 +12,15 @@ import { AiChatService } from './services/ai-chat.service';
 import { StorefrontApiService } from './services/storefront-api.service';
 import { ConversationCacheService } from './services/conversation-cache.service';
 import { ProductEmbeddingHandler } from './handlers/product-embedding-handler';
-import { VariantEmbeddingHandler } from './handlers/variant-embedding-handler';
 import { CollectionEmbeddingHandler } from './handlers/collection-embedding-handler';
 import { EmbedAllJobService } from './services/embed-all-job.service';
+import { EmbeddingSyncService } from './services/embedding-sync.service';
 import { AiAssistantResolver } from './api/ai-assistant.resolver';
 import { AiAssistantController } from './controllers/ai-assistant.controller';
 import { AdminChatController } from './controllers/admin-chat.controller';
 import { AdminAiChatService } from './services/admin-ai-chat.service';
 import { AdminConfirmationService } from './services/admin-confirmation.service';
+import { ChatLimitsService } from './services/chat-limits.service';
 import { AiChatHistoryService } from './services/ai-chat-history.service';
 import { AI_ASSISTANT_OPTIONS, aiAdminAssistantPermission, type AiAssistantPluginOptions } from './constants';
 import { embedAllSchemaExtension } from './api/schema-extensions';
@@ -49,12 +50,13 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         AiChatService,
         AdminAiChatService,
         AdminConfirmationService,
+        ChatLimitsService,
         AiChatHistoryService,
         ConversationCacheService,
         ProductEmbeddingHandler,
-        VariantEmbeddingHandler,
         CollectionEmbeddingHandler,
         EmbedAllJobService,
+        EmbeddingSyncService,
     ],
     configuration: config => {
         config.authOptions.customPermissions.push(aiAdminAssistantPermission);
@@ -73,13 +75,11 @@ export class AiAssistantPlugin implements OnApplicationBootstrap {
     constructor(
         private eventBus: EventBus,
         private productHandler: ProductEmbeddingHandler,
-        private variantHandler: VariantEmbeddingHandler,
         private collectionHandler: CollectionEmbeddingHandler,
     ) {}
 
     onApplicationBootstrap() {
         void this.productHandler;
-        void this.variantHandler;
         void this.collectionHandler;
     }
 }

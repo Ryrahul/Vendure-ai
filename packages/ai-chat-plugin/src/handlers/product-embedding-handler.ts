@@ -1,80 +1,26 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { EventBus, ProductEvent, TransactionalConnection, Product } from '@vendure/core';
-import { filter } from 'rxjs/operators';
-import { EmbeddingService } from '../services/embedding.service';
-import { ProductEmbeddingService } from '../services/product-embedding.service';
+import { EventBus, ProductEvent } from '@vendure/core';
+
+import { EmbeddingSyncService } from '../services/embedding-sync.service';
 
 /**
- * Subscribes to Product created/updated/deleted and keeps ProductEmbedding in sync.
- * On create/update: load product translations, build text (name + description), embed via OpenAI, upsert.
- * On delete: remove embedding row.
+ * Keeps product embeddings in sync: created/updated products are queued and embedded in
+ * batches (unchanged text is skipped); deleted products lose their embedding.
  */
 @Injectable()
 export class ProductEmbeddingHandler implements OnModuleInit {
     constructor(
         private eventBus: EventBus,
-        private connection: TransactionalConnection,
-        private embeddingService: EmbeddingService,
-        private productEmbeddingService: ProductEmbeddingService,
+        private embeddingSync: EmbeddingSyncService,
     ) {}
 
     onModuleInit() {
-        this.eventBus
-            .ofType(ProductEvent)
-            .pipe(
-                filter((e) => e.type === 'created' || e.type === 'updated' || e.type === 'deleted'),
-            )
-            .subscribe((event: ProductEvent) => {
-                if (event.type === 'deleted') {
-                    const productId = this.getProductId(event.entity);
-                    if (productId != null) {
-                        this.productEmbeddingService.deleteByProductId(event.ctx, productId).catch((err) => {
-                            console.error('[AiAssistantPlugin] Failed to delete embedding for product', productId, err);
-                        });
-                    }
-                    return;
-                }
-                // created | updated
-                this.embedProduct(event).catch((err) => {
-                    console.error('[AiAssistantPlugin] Failed to embed product', event.entity.id, err);
-                });
-            });
-    }
-
-    private getProductId(product: Product): number | null {
-        const id = product?.id;
-        if (id == null) return null;
-        return typeof id === 'number' ? id : parseInt(String(id), 10);
-    }
-
-    private async embedProduct(event: ProductEvent): Promise<void> {
-        const productId = this.getProductId(event.entity);
-        if (productId == null) return;
-
-        const productRepo = this.connection.rawConnection.getRepository(Product);
-        const product = await productRepo.findOne({
-            where: { id: productId },
-            relations: ['translations'],
+        this.eventBus.ofType(ProductEvent).subscribe(event => {
+            const id = Number(event.entity?.id);
+            if (Number.isFinite(id)) {
+                // Deletion is a soft delete; the sync sees the product is gone and removes its row.
+                this.embeddingSync.schedule('product', id);
+            }
         });
-        if (!product?.translations?.length) {
-            return;
-        }
-
-        const text = buildProductText(product);
-        if (!text.trim()) return;
-
-        const embedding = await this.embeddingService.embed(text);
-        await this.productEmbeddingService.upsertEmbedding(event.ctx, productId, embedding);
     }
-}
-
-function buildProductText(product: Product): string {
-    const parts: string[] = [];
-    for (const t of product.translations || []) {
-        const name = (t as { name?: string }).name;
-        const description = (t as { description?: string }).description;
-        if (name) parts.push(String(name));
-        if (description) parts.push(String(description));
-    }
-    return parts.join(' ').trim();
 }

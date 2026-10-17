@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0
+
+> **Database:** adds a nullable `contentHash` column to `product_embedding` and `collection_embedding`. With `synchronize: false`, generate and run a migration (`npx vendure migrate`).
+
+### Added
+
+- **Guest carts.** Cart, checkout and coupon tools now work for guests: the active order is resolved with `ActiveOrderService` (like the Shop API `activeOrder` query, honouring custom `ActiveOrderStrategy`s) instead of requiring a logged-in customer.
+- **Usage limits** (`limits` option, on by default): per-minute message limits per shopper (customer/session/IP), per IP, and per administrator, plus daily token budgets. Exceeding them returns HTTP 429.
+- **Transactions for write tools.** Shop cart/checkout writes and admin writes run in a transaction and are rolled back if they throw or report a failure (no more half-created products from a failed `createProductWithVariants`).
+
+### Changed
+
+- **Embeddings are batched and incremental.** Catalog changes are debounced and embedded together (`embedMany`, 100 texts per request); a content hash skips unchanged products/collections, so price/stock changes and re-running `triggerEmbedAll` cost nothing. HTML is stripped from descriptions. Soft-deleted products are no longer embedded.
+- **Variant embeddings are no longer generated** (they were never used for search and cost one OpenAI call per variant change). The table is kept.
+- Order line ids are no longer required to be numeric (UUID id strategies work).
+- Token usage now counts every step of a multi-step tool run (`totalUsage`), not just the last one.
+- Cart, checkout, promotion and admin tool summaries show prices in the shopper's/channel currency instead of always `$` (search was fixed in 0.3.0).
+
 ## 0.3.1
 
 ### Fixed

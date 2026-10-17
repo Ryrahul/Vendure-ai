@@ -22,6 +22,7 @@ import {
 } from '../constants';
 import { AdminAiChatService, AdminChatResult, ConfirmedActionResult } from '../services/admin-ai-chat.service';
 import { AdminConfirmationService } from '../services/admin-confirmation.service';
+import { ChatLimitsService } from '../services/chat-limits.service';
 import { AiChatHistoryService } from '../services/ai-chat-history.service';
 
 export interface AdminChatRequest {
@@ -59,6 +60,7 @@ export class AdminChatController {
         private chatHistoryService: AiChatHistoryService,
         private administratorService: AdministratorService,
         private confirmations: AdminConfirmationService,
+        private chatLimits: ChatLimitsService,
     ) {}
 
     @Post('chat')
@@ -88,10 +90,13 @@ export class AdminChatController {
             ? sanitizeHistory(existingSession.messages, maxHistory)
             : sanitizeHistory(body.history, maxHistory);
 
+        await this.chatLimits.checkBeforeChat('admin', `admin:${administratorId}`);
         const result = await this.adminAiChatService.chat(ctx, message, history, body.currentPage, {
             administratorId,
             sessionId,
         });
+
+        await this.chatLimits.recordUsage('admin', `admin:${administratorId}`, result.usage?.totalTokens);
 
         const model = this.options.azureOpenai ? this.options.azureOpenai.deploymentName : (this.options.chatModel ?? 'gpt-4o-mini');
         try {

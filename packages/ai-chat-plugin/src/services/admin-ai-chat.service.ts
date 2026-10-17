@@ -28,6 +28,7 @@ import {
     restrictAdminTools,
 } from './admin-tool-permissions';
 import { AdminConfirmationService, type PendingAdminAction, type PendingAdminActionView } from './admin-confirmation.service';
+import { isAdminWriteTool, isFailedToolOutput, runToolInTransaction } from './tool-transactions';
 import { AdminOrderTools } from './admin-tools/admin-order-tools';
 import { AdminCustomerTools } from './admin-tools/admin-customer-tools';
 import { AdminCollectionTools } from './admin-tools/admin-collection-tools';
@@ -373,6 +374,11 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
         );
         return restrictAdminTools(ctx, this.buildTools(ctx), {
             requiresConfirmation: name => confirmationTools.has(name),
+            isWrite: isAdminWriteTool,
+            runWrite: (name, input, executeOptions) =>
+                runToolInTransaction(this.connection, ctx, txCtx =>
+                    (this.buildTools(txCtx)[name] as any).execute(input, executeOptions),
+                ),
             onConfirmationRequired: async (toolName, input) => {
                 if (!meta) {
                     return { summary: `${toolName} needs to be confirmed in the dashboard and cannot run here.` };
@@ -410,15 +416,15 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
         if (!canUseAdminTool(ctx, action.toolName)) {
             return { success: false, summary: `You no longer have permission to ${describeAdminAction(action.toolName, {}).toLowerCase()}.` };
         }
-        const output: any = await this.connection.withTransaction(ctx, async txCtx => {
-            const tool = this.buildTools(txCtx)[action.toolName] as any;
-            return tool.execute(action.input, { toolCallId: `confirmed-${action.id}`, messages: [] });
-        });
+        const output: any = await runToolInTransaction(this.connection, ctx, txCtx =>
+            (this.buildTools(txCtx)[action.toolName] as any).execute(action.input, {
+                toolCallId: `confirmed-${action.id}`,
+                messages: [],
+            }),
+        );
         const summary = String(output?.summary ?? 'Done.');
-        // Tools report failures as text rather than throwing, so check the summary too.
-        const failed = !!output?.error || /^(error|could not|cannot|failed|unable|no \w+ (found|with))/i.test(summary.trim());
         return {
-            success: !failed,
+            success: !isFailedToolOutput(output),
             summary,
             ...(output?.products?.length ? { products: output.products } : {}),
             ...(output?.collections?.length ? { collections: output.collections } : {}),
@@ -450,7 +456,7 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             },
         });
 
-        const [text, steps, usage] = await Promise.all([result.text, result.steps, result.usage]);
+        const [text, steps, usage] = await Promise.all([result.text, result.steps, result.totalUsage]);
 
         let allProducts: AiChatProduct[] = [];
         let allCollections: AiChatCollection[] = [];

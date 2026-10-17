@@ -281,9 +281,9 @@ You can customize the component's look by changing these CSS variables in your T
 
 ## Authentication
 
-The `authToken` prop is **optional**. Without it, the chat works in anonymous mode — users can search products, browse collections, and filter by price.
+The `authToken` prop is **optional**. Without it, the chat can search products, browse collections and filter by price.
 
-To unlock authenticated features (cart management, order history, order tracking, checkout), pass the Vendure session token:
+Pass the shopper's Vendure Shop API session token — **for guests too** (with plugin `>= 0.4.0`). A guest's cart lives on their session, so with the same token the assistant can view and change the guest's cart and help with checkout. Order history and tracking need a logged-in customer:
 
 | Feature | Anonymous | Authenticated |
 |---------|-----------|---------------|
@@ -291,11 +291,11 @@ To unlock authenticated features (cart management, order history, order tracking
 | Vector/semantic search | Yes | Yes |
 | Browse collections | Yes | Yes |
 | Filter by price | Yes | Yes |
-| Add to cart | No | Yes |
-| View cart | No | Yes |
+| Add to cart | Yes (with the guest's session token) | Yes |
+| View / change cart | Yes (with the guest's session token) | Yes |
 | Order history | No | Yes |
 | Track orders | No | Yes |
-| Checkout flow | No | Yes |
+| Checkout flow | Yes (with the guest's session token) | Yes |
 
 ### How it works
 

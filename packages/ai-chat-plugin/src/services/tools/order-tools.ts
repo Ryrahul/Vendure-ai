@@ -51,7 +51,7 @@ export class OrderTools {
                 collections: [],
                 orders: mapped,
                 summary: mapped.length > 0
-                    ? `Found ${mapped.length} order(s). ${mapped.map(o => `Order ${o.code}: ${o.state}, total ${formatPrice(o.total)}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
+                    ? `Found ${mapped.length} order(s). ${mapped.map(o => `Order ${o.code}: ${o.state}, total ${formatPrice(o.total, ctx.currencyCode)}, placed ${o.orderPlacedAt ?? 'N/A'}, items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`).join(' | ')}`
                     : 'No past orders found.',
             };
         } catch (e) {
@@ -113,7 +113,7 @@ export class OrderTools {
                 products: [],
                 collections: [],
                 orders: mapped,
-                summary: `Order ${o.code}: State: ${o.state}, Total: ${formatPrice(o.total)}, Placed: ${o.orderPlacedAt ?? 'N/A'}. Fulfillment: ${fulfillmentInfo}. Items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`,
+                summary: `Order ${o.code}: State: ${o.state}, Total: ${formatPrice(o.total, ctx.currencyCode)}, Placed: ${o.orderPlacedAt ?? 'N/A'}. Fulfillment: ${fulfillmentInfo}. Items: ${o.lines.map(l => `${l.quantity}x ${l.productName}`).join(', ')}`,
             };
         } catch (e) {
             this.logger.error(`Error tracking order: ${e}`);

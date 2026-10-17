@@ -15,14 +15,15 @@ export class CollectionEmbeddingService {
         ctx: RequestContext,
         collectionId: number,
         embedding: number[],
+        contentHash?: string,
     ): Promise<void> {
         await this.ensureRow(ctx, collectionId);
         const conn = this.connection.rawConnection;
         const vectorStr = '[' + embedding.map((n) => Number(n)).join(',') + ']';
         const schema = (conn.options as { schema?: string }).schema ?? 'public';
         await conn.query(
-            `UPDATE ${schema}.collection_embedding SET embedding = $1::vector, "updatedAt" = NOW() WHERE "collectionId" = $2`,
-            [vectorStr, collectionId],
+            `UPDATE ${schema}.collection_embedding SET embedding = $1::vector, "contentHash" = $3, "updatedAt" = NOW() WHERE "collectionId" = $2`,
+            [vectorStr, collectionId, contentHash ?? null],
         );
     }
 
@@ -55,6 +56,20 @@ export class CollectionEmbeddingService {
             collectionId: r.collectionId,
             score: Number(r.score),
         }));
+    }
+
+    /** Content hashes of rows that already have an embedding, keyed by collectionId. */
+    async getEmbeddedHashes(collectionIds: number[]): Promise<Map<number, string | null>> {
+        if (!collectionIds.length) {
+            return new Map();
+        }
+        const conn = this.connection.rawConnection;
+        const schema = (conn.options as { schema?: string }).schema ?? 'public';
+        const rows: Array<{ id: number; hash: string | null }> = await conn.query(
+            `SELECT "collectionId" AS id, "contentHash" AS hash FROM ${schema}.collection_embedding WHERE "collectionId" = ANY($1) AND embedding IS NOT NULL`,
+            [collectionIds],
+        );
+        return new Map(rows.map(r => [Number(r.id), r.hash]));
     }
 
     async ensureRow(ctx: RequestContext, collectionId: number): Promise<void> {

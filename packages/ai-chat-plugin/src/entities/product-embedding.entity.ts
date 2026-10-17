@@ -21,6 +21,10 @@ export class ProductEmbedding extends VendureEntity {
     @Column()
     productId: number;
 
+    /** sha256 of (model + embedded text); unchanged products are not re-embedded. */
+    @Column({ type: 'varchar', length: 64, nullable: true })
+    contentHash: string | null;
+
     @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false, nullable: true })
     embedding?: string;
 }

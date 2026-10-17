@@ -15,6 +15,7 @@ import {
     SetShippingMethodAction,
 } from '../services/ai-chat.service';
 import { ConversationCacheService } from '../services/conversation-cache.service';
+import { ChatLimitsService } from '../services/chat-limits.service';
 import { AI_ASSISTANT_OPTIONS, sanitizeHistory, type AiAssistantPluginOptions } from '../constants';
 
 /** Client-generated conversation ids: opaque, URL-safe, long enough to be unguessable. */
@@ -81,6 +82,7 @@ export class AiAssistantController {
         @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
         private customerService: CustomerService,
         private aiChatService: AiChatService,
+        private chatLimits: ChatLimitsService,
         private conversationCacheService: ConversationCacheService,
     ) {
         this.cacheEnabled = options.enableConversationCache !== false;
@@ -204,8 +206,11 @@ export class AiAssistantController {
             const customer = await this.customerService.findOneByUserId(ctx, ctx.activeUserId);
             customerId = customer?.id;
         }
+        const ip = ctx.req?.ip;
         const ownerKey = customerId != null ? `customer:${customerId}` : ctx.session?.id ? `session:${ctx.session.id}` : 'anonymous';
-        return { customerId, ownerKey };
+        // Usage limits apply per customer, else per session, else per IP address.
+        const limitKey = ownerKey !== 'anonymous' ? ownerKey : `ip:${ip ?? 'unknown'}`;
+        return { customerId, ownerKey, limitKey, ip };
     }
 
     /**
@@ -215,7 +220,7 @@ export class AiAssistantController {
     @Post('chat')
     @Allow(Permission.Public)
     async chat(@Ctx() ctx: RequestContext, @Body() body: AiChatRequest): Promise<AiChatResponse> {
-        const { customerId, ownerKey } = await this.resolveCustomer(ctx);
+        const { customerId, ownerKey, limitKey, ip } = await this.resolveCustomer(ctx);
         const { message: query, history, conversationId } = await this.resolveHistory(body, ownerKey);
 
         if (!query) {
@@ -226,7 +231,9 @@ export class AiAssistantController {
             };
         }
 
+        await this.chatLimits.checkBeforeChat('shop', limitKey, ip);
         const result = await this.aiChatService.chat(ctx, query, history, customerId);
+        await this.chatLimits.recordUsage('shop', limitKey, result.usage?.totalTokens);
 
         // Cache the new turn if conversationId is present
         if (conversationId) {
@@ -263,7 +270,7 @@ export class AiAssistantController {
     @Post('stream')
     @Allow(Permission.Public)
     async stream(@Ctx() ctx: RequestContext, @Body() body: AiChatRequest, @Res() res: Response): Promise<void> {
-        const { customerId, ownerKey } = await this.resolveCustomer(ctx);
+        const { customerId, ownerKey, limitKey, ip } = await this.resolveCustomer(ctx);
         const { message: query, history, conversationId } = await this.resolveHistory(body, ownerKey);
 
         if (!query) {
@@ -275,6 +282,8 @@ export class AiAssistantController {
             });
             return;
         }
+
+        await this.chatLimits.checkBeforeChat('shop', limitKey, ip);
 
         // Stop generating (and spending tokens) if the shopper disconnects mid-answer.
         const abort = new AbortController();
@@ -310,6 +319,12 @@ export class AiAssistantController {
             }
         } else {
             res.end();
+        }
+
+        try {
+            await this.chatLimits.recordUsage('shop', limitKey, (await streamResult.totalUsage).totalTokens);
+        } catch {
+            // usage is unavailable if the stream was aborted
         }
 
         // Cache the new conversation turn after the stream completes.

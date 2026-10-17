@@ -76,7 +76,11 @@ mutation {
 }
 ```
 
-This generates vector embeddings for all products, variants, and collections in the background. You only need to run this once — after that, embeddings are automatically kept in sync on create/update/delete.
+This embeds all products and collections in the background. Afterwards, embeddings stay in sync automatically:
+
+- **Batched:** changes are collected for ~1.5 s and embedded together (one OpenAI request per 100 texts).
+- **Only what changed:** each row stores a hash of the embedded text, so unchanged products and collections are never re-embedded — a price or stock change costs nothing, and re-running `triggerEmbedAll` only embeds what changed.
+- **Clean text:** names plus descriptions with HTML stripped.
 
 ### 3. Add the frontend
 
@@ -106,6 +110,7 @@ See the [`@rahul_vendure/ai-chat-react` README](https://www.npmjs.com/package/@r
 | `maxHistoryMessages` | `number` | No | `20` | Max previous messages sent to the model per turn |
 | `enableConversationCache` | `boolean` | No | `true` | Cache shop conversations server-side (scoped to the customer or session) |
 | `azureOpenai` | `object` | No | — | Azure OpenAI fallback for chat |
+| `limits` | `object` | No | see [Usage limits](#usage-limits) | Message rate limits and daily token budgets |
 | `adminToolsRequiringConfirmation` | `string[]` | No | deletes + staff/roles/channels/settings/payment changes | Admin tools that only run after the administrator presses Confirm |
 
 ## Search
@@ -116,6 +121,28 @@ Vendure has no engine-agnostic search service — each search plugin replaces th
 - **Optional engine features are detected at runtime**: if your engine supports `priceRangeWithTax` (e.g. Elasticsearch), price filters run in the engine; otherwise a bounded in-memory filter is used. Stock status is shown when the engine exposes `inStock`.
 - **Semantic (pgvector) results are hydrated through the Shop API too**, so a product that is disabled, deleted, not in the shopper's channel, or hidden by another plugin is never suggested.
 - Prices are what the customer pays (tax included), formatted in the channel currency.
+
+## Guest carts
+
+Cart, checkout and coupon tools work for guests as well as logged-in customers: the assistant uses the shopper's active order exactly like the Shop API's `activeOrder` query (via `ActiveOrderService`, honouring any custom `ActiveOrderStrategy`). A guest's cart belongs to their Shop API session, so the chat request must carry the **same session** as the storefront — pass the storefront's auth token (`authToken` on `<VendureAiChat>`), or use cookie sessions on the same domain. Order history and order tracking still require a logged-in customer.
+
+## Usage limits
+
+Every chat message is checked before the model is called; exceeding a limit returns HTTP 429.
+
+| Limit (`limits.*`) | Default | Counted per |
+|---|---|---|
+| `shopMessagesPerMinute` | 20 | customer, else session, else IP |
+| `shopMessagesPerMinutePerIp` | 60 | IP address (stops session hopping) |
+| `shopTokensPerDay` | 200 000 | customer, else session, else IP |
+| `adminMessagesPerMinute` | 30 | administrator |
+| `adminTokensPerDay` | 1 000 000 | administrator |
+
+Set any value to `0` to disable it. Counters live in Vendure's `CacheService` (use a shared cache strategy, e.g. Redis, to share them between server instances). Behind a proxy, set `apiOptions.trustProxy` so the client IP is correct.
+
+## Write safety
+
+Every tool that changes data (cart and checkout changes, admin writes) runs in a database transaction. If it fails partway — or reports a failure — everything it changed is rolled back, so e.g. a failed "create product with variants" never leaves a half-created product.
 
 ## API Endpoints
 
@@ -201,9 +228,9 @@ The AI assistant has 19 built-in tools:
 
 The plugin adds three entities to your database:
 
-- `product_embedding` — Vector embeddings for products
-- `variant_embedding` — Vector embeddings for product variants
-- `collection_embedding` — Vector embeddings for collections
+- `product_embedding` — Vector embeddings for products (`contentHash` column since 0.4.0)
+- `collection_embedding` — Vector embeddings for collections (`contentHash` column since 0.4.0)
+- `variant_embedding` — no longer written since 0.4.0 (it was never used for search); kept so existing databases don't need a destructive migration
 
 ## Admin Dashboard AI Chat
 

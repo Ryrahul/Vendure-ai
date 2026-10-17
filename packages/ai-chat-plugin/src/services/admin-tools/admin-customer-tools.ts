@@ -58,7 +58,7 @@ export class AdminCustomerTools {
                 const created = c.createdAt ? new Date(c.createdAt).toISOString().split('T')[0] : 'N/A';
 
                 lines.push(
-                    `- **${c.firstName ?? ''} ${c.lastName ?? ''}** (ID: ${c.id}) | ${c.emailAddress ?? 'no email'} | ${orderCount} order(s) | Total spent: ${formatPrice(totalSpent)} | Joined: ${created}`,
+                    `- **${c.firstName ?? ''} ${c.lastName ?? ''}** (ID: ${c.id}) | ${c.emailAddress ?? 'no email'} | ${orderCount} order(s) | Total spent: ${formatPrice(totalSpent, ctx.currencyCode)} | Joined: ${created}`,
                 );
             }
 
@@ -157,7 +157,7 @@ export class AdminCustomerTools {
                     const placed = (o as any).orderPlacedAt
                         ? new Date((o as any).orderPlacedAt).toISOString().split('T')[0]
                         : 'N/A';
-                    return `  - ${o.code} | ${o.state} | ${formatPrice(total)} | ${placed}`;
+                    return `  - ${o.code} | ${o.state} | ${formatPrice(total, ctx.currencyCode)} | ${placed}`;
                 }).join('\n')
                 : '  - No orders';
 
@@ -165,7 +165,7 @@ export class AdminCustomerTools {
                 `**${title ? title + ' ' : ''}${name}** (ID: ${customer.id})`,
                 `Email: ${email} | Phone: ${phone} | Joined: ${created}`,
                 '',
-                `**Order Summary:** ${orderCount} order(s) | Total spent: ${formatPrice(totalSpent)} | Last order: ${lastOrderDate}`,
+                `**Order Summary:** ${orderCount} order(s) | Total spent: ${formatPrice(totalSpent, ctx.currencyCode)} | Last order: ${lastOrderDate}`,
                 '',
                 '**Recent Orders:**',
                 recentOrderLines,

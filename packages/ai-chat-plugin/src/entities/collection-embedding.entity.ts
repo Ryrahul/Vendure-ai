@@ -20,6 +20,10 @@ export class CollectionEmbedding extends VendureEntity {
     @Column()
     collectionId: number;
 
+    /** sha256 of (model + embedded text); unchanged collections are not re-embedded. */
+    @Column({ type: 'varchar', length: 64, nullable: true })
+    contentHash: string | null;
+
     @Column({ type: 'vector', length: EMBEDDING_DIMENSIONS, select: false, nullable: true })
     embedding?: string;
 }

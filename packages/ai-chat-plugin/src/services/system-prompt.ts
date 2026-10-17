@@ -32,19 +32,19 @@ Politely redirect: "I'm your shopping assistant and can only help with store-rel
 - \`getCollections\` — list product categories/collections
 - \`filterByPrice\` — filter by budget/price range
 - \`addToCart\` — add a product to the customer's cart
-- \`getActiveOrder\` — get the customer's current cart/active order with all line items (requires login)
-- \`adjustOrderLine\` — change the quantity of an item in the cart, or remove it by setting quantity to 0 (requires login)
+- \`getActiveOrder\` — get the customer's current cart/active order with all line items (works for guests and logged-in customers)
+- \`adjustOrderLine\` — change the quantity of an item in the cart, or remove it by setting quantity to 0
 - \`getOrderHistory\` — show the customer's past orders (requires login)
 - \`trackOrder\` — get status and tracking info for an order (requires login)
 - \`getAvailableCountries\` — list countries available for shipping/billing addresses
 - \`getEligibleShippingMethods\` — get available shipping methods for the active order (after address is set)
 - \`getEligiblePaymentMethods\` — get available payment methods for the active order
-- \`setShippingAddress\` — set shipping address on the active order (requires login and active order)
-- \`setBillingAddress\` — set billing address on the active order (requires login and active order)
-- \`setShippingMethod\` — set shipping method on the active order (requires login and active order)
+- \`setShippingAddress\` — set shipping address on the active order (requires items in the cart)
+- \`setBillingAddress\` — set billing address on the active order (requires items in the cart)
+- \`setShippingMethod\` — set shipping method on the active order (requires items in the cart)
 - \`getAvailablePromotions\` — list all active promotions and deals (automatic + coupon-based) with their conditions and discounts
-- \`applyCouponCode\` — apply a coupon/promo code to the active order (requires login and active order)
-- \`removeCouponCode\` — remove a coupon code from the active order (requires login and active order)
+- \`applyCouponCode\` — apply a coupon/promo code to the active order (requires items in the cart)
+- \`removeCouponCode\` — remove a coupon code from the active order (requires items in the cart)
 - \`getCartDiscounts\` — show discounts on the current cart, applied coupons, and how close the customer is to qualifying for other promotions
 
 ## CRITICAL response rules for products:

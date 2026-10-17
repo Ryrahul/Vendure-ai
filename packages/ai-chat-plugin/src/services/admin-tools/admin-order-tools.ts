@@ -68,7 +68,7 @@ export class AdminOrderTools {
                     ? `${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim()
                     : 'Guest';
                 const total = (o as any).totalWithTax ?? 0;
-                return `${o.code} (${o.state}, ${customerStr}, ${formatPrice(total)})`;
+                return `${o.code} (${o.state}, ${customerStr}, ${formatPrice(total, ctx.currencyCode)})`;
             });
 
             return {
@@ -148,7 +148,7 @@ export class AdminOrderTools {
                 const linePrice = line.linePriceWithTax ?? line.linePrice ?? 0;
                 const unitPrice = line.unitPriceWithTax ?? line.unitPrice ?? 0;
                 const sku = line.productVariant?.sku ?? '';
-                return `  - ${name} (SKU: ${sku}) × ${qty} @ ${formatPrice(unitPrice)} = ${formatPrice(linePrice)}`;
+                return `  - ${name} (SKU: ${sku}) × ${qty} @ ${formatPrice(unitPrice, ctx.currencyCode)} = ${formatPrice(linePrice, ctx.currencyCode)}`;
             }).join('\n');
 
             // Payments
@@ -159,7 +159,7 @@ export class AdminOrderTools {
                     const amount = p.amount ?? 0;
                     const state = p.state ?? 'Unknown';
                     const transactionId = p.transactionId ?? 'N/A';
-                    return `  - ${method}: ${formatPrice(amount)} (${state}, Tx: ${transactionId})`;
+                    return `  - ${method}: ${formatPrice(amount, ctx.currencyCode)} (${state}, Tx: ${transactionId})`;
                 }).join('\n')
                 : '  - No payments recorded';
 
@@ -181,7 +181,7 @@ export class AdminOrderTools {
                 ? shippingLines.map((sl: any) => {
                     const methodName = sl.shippingMethod?.translations?.[0]?.name ?? sl.shippingMethod?.code ?? 'Unknown';
                     const price = sl.priceWithTax ?? sl.price ?? 0;
-                    return `  - ${methodName}: ${formatPrice(price)}`;
+                    return `  - ${methodName}: ${formatPrice(price, ctx.currencyCode)}`;
                 }).join('\n')
                 : '  - No shipping lines';
 
@@ -191,7 +191,7 @@ export class AdminOrderTools {
                 ? surcharges.map((s: any) => {
                     const desc = s.description ?? 'Surcharge';
                     const amount = s.priceWithTax ?? s.price ?? 0;
-                    return `  - ${desc}: ${formatPrice(amount)}`;
+                    return `  - ${desc}: ${formatPrice(amount, ctx.currencyCode)}`;
                 }).join('\n')
                 : '';
 
@@ -231,7 +231,7 @@ export class AdminOrderTools {
                 `**Line Items:**`,
                 linesSummary || '  - No items',
                 '',
-                `Subtotal: ${formatPrice(subTotal)} | Shipping: ${formatPrice(shippingTotal)} | **Total: ${formatPrice(totalWithTax)}**`,
+                `Subtotal: ${formatPrice(subTotal, ctx.currencyCode)} | Shipping: ${formatPrice(shippingTotal, ctx.currencyCode)} | **Total: ${formatPrice(totalWithTax, ctx.currencyCode)}**`,
             ];
 
             if (surchargesSummary) {

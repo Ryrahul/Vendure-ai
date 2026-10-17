@@ -3,6 +3,7 @@ import { RequestContext, TransactionalConnection, ProductVariant, OrderService, 
 import { ChatResultMapper } from '../chat-result-mapper';
 import { formatPrice } from '../../constants';
 import type { AiChatProduct, AiChatCollection, AiActiveOrder, AddToCartAction, ToolResult } from '../types';
+import { ActiveOrderLookup, NO_CART_MESSAGE } from './active-order-lookup';
 
 export class CartTools {
     private readonly logger = new Logger(CartTools.name);
@@ -11,6 +12,7 @@ export class CartTools {
         private connection: TransactionalConnection,
         private orderService: OrderService,
         private mapper: ChatResultMapper,
+        private activeOrders: ActiveOrderLookup,
     ) {}
 
     async addToCart(
@@ -89,18 +91,15 @@ export class CartTools {
         ctx: RequestContext,
         _args: Record<string, unknown>,
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to view your cart.' };
-        }
 
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
 
             if (!order) {
-                return { products: [], collections: [], summary: 'Your cart is empty. No active order found.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
 
-            const orderRepo = this.connection.rawConnection.getRepository(Order);
+            const orderRepo = this.connection.getRepository(ctx, Order);
             const fullOrder = await orderRepo.findOne({
                 where: { id: order.id },
                 relations: ['lines', 'lines.productVariant', 'lines.productVariant.translations', 'lines.featuredAsset'],
@@ -113,14 +112,14 @@ export class CartTools {
             const activeOrder = this.mapper.mapActiveOrder(fullOrder);
 
             const linesSummary = activeOrder.lines
-                .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId}, variantId: ${l.variantId}, linePrice: ${formatPrice(l.linePriceWithTax)})`)
+                .map(l => `${l.quantity}x "${l.productName}" (orderLineId: ${l.orderLineId}, variantId: ${l.variantId}, linePrice: ${formatPrice(l.linePriceWithTax, ctx.currencyCode)})`)
                 .join(', ');
 
             return {
                 products: [],
                 collections: [],
                 activeOrder,
-                summary: `Cart has ${activeOrder.totalQuantity} item(s), total: ${formatPrice(activeOrder.totalWithTax)}. Lines: ${linesSummary}. Use the orderLineId when adjusting quantities.`,
+                summary: `Cart has ${activeOrder.totalQuantity} item(s), total: ${formatPrice(activeOrder.totalWithTax, ctx.currencyCode)}. Lines: ${linesSummary}. Use the orderLineId when adjusting quantities.`,
             };
         } catch (e) {
             this.logger.error(`Error fetching active order: ${e}`);
@@ -132,14 +131,11 @@ export class CartTools {
         ctx: RequestContext,
         args: Record<string, unknown>,
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to modify your cart.' };
-        }
 
         const orderLineId = String(args.orderLineId ?? '').trim();
         const quantity = Number(args.quantity ?? -1);
 
-        if (!orderLineId || !/^\d+$/.test(orderLineId)) {
+        if (!orderLineId) {
             return { products: [], collections: [], summary: 'Error: Invalid orderLineId. Use getActiveOrder first to get the correct orderLineId.' };
         }
         if (quantity < 0) {
@@ -147,16 +143,16 @@ export class CartTools {
         }
 
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Your cart is empty.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
 
             let result;
             if (quantity === 0) {
-                result = await this.orderService.removeItemFromOrder(ctx, order.id, Number(orderLineId));
+                result = await this.orderService.removeItemFromOrder(ctx, order.id, orderLineId);
             } else {
-                result = await this.orderService.adjustOrderLine(ctx, order.id, Number(orderLineId), quantity);
+                result = await this.orderService.adjustOrderLine(ctx, order.id, orderLineId, quantity);
             }
 
             if (isGraphQlErrorResult(result)) {
@@ -165,7 +161,7 @@ export class CartTools {
                 return { products: [], collections: [], summary: `Error adjusting cart: ${errorMsg}` };
             }
 
-            const orderRepo = this.connection.rawConnection.getRepository(Order);
+            const orderRepo = this.connection.getRepository(ctx, Order);
             const fullOrder = await orderRepo.findOne({
                 where: { id: order.id },
                 relations: ['lines', 'lines.productVariant', 'lines.productVariant.translations', 'lines.featuredAsset'],
@@ -192,7 +188,7 @@ export class CartTools {
                 products: [],
                 collections: [],
                 activeOrder,
-                summary: `Item ${action}. Cart now has ${activeOrder.totalQuantity} item(s), total: ${formatPrice(activeOrder.totalWithTax)}. Lines: ${linesSummary}`,
+                summary: `Item ${action}. Cart now has ${activeOrder.totalQuantity} item(s), total: ${formatPrice(activeOrder.totalWithTax, ctx.currencyCode)}. Lines: ${linesSummary}`,
             };
         } catch (e) {
             this.logger.error(`Error adjusting order line: ${e}`);

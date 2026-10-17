@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, OrderService, Order, isGraphQlErrorResult } from '@vendure/core';
 import { formatPrice } from '../../constants';
 import type { ToolResult, AiPromotion, ApplyCouponAction } from '../types';
+import { ActiveOrderLookup, NO_CART_MESSAGE } from './active-order-lookup';
 
 export class PromotionTools {
     private readonly logger = new Logger(PromotionTools.name);
@@ -9,6 +10,7 @@ export class PromotionTools {
     constructor(
         private connection: TransactionalConnection,
         private orderService: OrderService,
+        private activeOrders: ActiveOrderLookup,
         /** When false, coupon codes are never sent to the model or the client. */
         private exposeCouponCodes = false,
     ) {}
@@ -63,7 +65,7 @@ export class PromotionTools {
                 const conditions = this.parseJsonColumn(row.conditions);
                 const conditionDetails: string[] = [];
                 for (const c of conditions) {
-                    const parsed = this.parseCondition(c.code ?? c.type, c.args);
+                    const parsed = this.parseCondition(c.code ?? c.type, c.args, ctx.currencyCode);
                     if (parsed) conditionDetails.push(parsed);
                 }
                 if (conditionDetails.length > 0) {
@@ -74,7 +76,7 @@ export class PromotionTools {
                 const actions = this.parseJsonColumn(row.actions);
                 const actionDetails: string[] = [];
                 for (const a of actions) {
-                    const parsed = this.parseAction(a.code ?? a.type, a.args);
+                    const parsed = this.parseAction(a.code ?? a.type, a.args, ctx.currencyCode);
                     if (parsed) actionDetails.push(parsed);
                 }
                 if (actionDetails.length > 0) {
@@ -124,9 +126,6 @@ export class PromotionTools {
         ctx: RequestContext,
         params: { couponCode: string },
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to apply a coupon code.' };
-        }
 
         const couponCode = params.couponCode?.trim();
         if (!couponCode) {
@@ -134,9 +133,9 @@ export class PromotionTools {
         }
 
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found. Add items to your cart first.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
 
             const result = await this.orderService.applyCouponCode(ctx, order.id, couponCode);
@@ -166,9 +165,9 @@ export class PromotionTools {
 
             let summaryText = `Coupon code "${couponCode}" applied successfully!`;
             if (discount > 0) {
-                summaryText += ` You saved ${formatPrice(discount)}. New order total: ${formatPrice(totalAfter)}.`;
+                summaryText += ` You saved ${formatPrice(discount, ctx.currencyCode)}. New order total: ${formatPrice(totalAfter, ctx.currencyCode)}.`;
             } else {
-                summaryText += ` Order total: ${formatPrice(totalAfter)}.`;
+                summaryText += ` Order total: ${formatPrice(totalAfter, ctx.currencyCode)}.`;
             }
 
             return {
@@ -190,9 +189,6 @@ export class PromotionTools {
         ctx: RequestContext,
         params: { couponCode: string },
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to remove a coupon code.' };
-        }
 
         const couponCode = params.couponCode?.trim();
         if (!couponCode) {
@@ -200,9 +196,9 @@ export class PromotionTools {
         }
 
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
-                return { products: [], collections: [], summary: 'Error: No active order found.' };
+                return { products: [], collections: [], summary: NO_CART_MESSAGE };
             }
 
             const result = await this.orderService.removeCouponCode(ctx, order.id, couponCode);
@@ -216,7 +212,7 @@ export class PromotionTools {
             return {
                 products: [],
                 collections: [],
-                summary: `Coupon code "${couponCode}" removed. Updated order total: ${formatPrice(totalAfter)}.`,
+                summary: `Coupon code "${couponCode}" removed. Updated order total: ${formatPrice(totalAfter, ctx.currencyCode)}.`,
                 applyCouponAction: { couponCode, applied: false },
             };
         } catch (e) {
@@ -232,12 +228,9 @@ export class PromotionTools {
     async getCartDiscounts(
         ctx: RequestContext,
     ): Promise<ToolResult> {
-        if (!ctx.activeUserId) {
-            return { products: [], collections: [], summary: 'Error: You must be logged in to view cart discounts.' };
-        }
 
         try {
-            const order = await this.orderService.getActiveOrderForUser(ctx, ctx.activeUserId);
+            const order = await this.activeOrders.find(ctx);
             if (!order) {
                 return { products: [], collections: [], summary: 'No active order found. Add items to your cart first.' };
             }
@@ -286,7 +279,7 @@ export class PromotionTools {
                         if (minAmount && subTotal < minAmount) {
                             const remaining = minAmount - subTotal;
                             nearbyPromotions.push(
-                                `"${promo.name}" — spend ${formatPrice(remaining)} more to qualify${promo.couponCode ? ` (use code: "${promo.couponCode}")` : ' (applied automatically)'}`,
+                                `"${promo.name}" — spend ${formatPrice(remaining, ctx.currencyCode)} more to qualify${promo.couponCode ? ` (use code: "${promo.couponCode}")` : ' (applied automatically)'}`,
                             );
                         }
                     }
@@ -295,14 +288,14 @@ export class PromotionTools {
 
             // Build summary
             const parts: string[] = [];
-            parts.push(`Cart subtotal: ${formatPrice(subTotal)}, total: ${formatPrice(total)}.`);
+            parts.push(`Cart subtotal: ${formatPrice(subTotal, ctx.currencyCode)}, total: ${formatPrice(total, ctx.currencyCode)}.`);
 
             if (couponCodes.length > 0) {
                 parts.push(`Applied coupon codes: ${couponCodes.map((c: string) => `"${c}"`).join(', ')}.`);
             }
 
             if (discount > 0) {
-                parts.push(`Total discount: ${formatPrice(discount)}.`);
+                parts.push(`Total discount: ${formatPrice(discount, ctx.currencyCode)}.`);
             } else {
                 parts.push('No discounts currently applied.');
             }
@@ -343,7 +336,7 @@ export class PromotionTools {
         }
     }
 
-    private parseCondition(code: string | undefined, argsRaw: unknown): string | null {
+    private parseCondition(code: string | undefined, argsRaw: unknown, currencyCode: string): string | null {
         if (!code) return null;
         try {
             const args = this.normalizeArgs(argsRaw);
@@ -353,7 +346,7 @@ export class PromotionTools {
                 case 'minimum_order_amount':
                 case 'minimumOrderAmount': {
                     const amount = this.extractAmountFromArgs(argsRaw);
-                    return amount ? `Minimum order of ${formatPrice(amount)}` : 'Minimum order amount required';
+                    return amount ? `Minimum order of ${formatPrice(amount, currencyCode)}` : 'Minimum order amount required';
                 }
                 case 'at_least_n_with_facets':
                 case 'atLeastNWithFacets': {
@@ -377,7 +370,7 @@ export class PromotionTools {
         }
     }
 
-    private parseAction(code: string | undefined, argsRaw: unknown): string | null {
+    private parseAction(code: string | undefined, argsRaw: unknown, currencyCode: string): string | null {
         if (!code) return null;
         try {
             const args = this.normalizeArgs(argsRaw);
@@ -392,7 +385,7 @@ export class PromotionTools {
                 case 'order_fixed_discount':
                 case 'orderFixedDiscount': {
                     const discount = argsMap.get('discount');
-                    return discount ? `${formatPrice(Number(discount))} off entire order` : 'Fixed discount on order';
+                    return discount ? `${formatPrice(Number(discount), currencyCode)} off entire order` : 'Fixed discount on order';
                 }
                 case 'facet_based_discount':
                 case 'discountOnItemWithFacets': {

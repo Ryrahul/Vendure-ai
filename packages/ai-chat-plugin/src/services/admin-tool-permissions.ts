@@ -150,6 +150,9 @@ export interface RestrictAdminToolsOptions {
     requiresConfirmation?: (toolName: string) => boolean;
     /** Called instead of executing a tool that requires confirmation; its result goes to the model. */
     onConfirmationRequired?: (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+    /** Runs non-confirmation write tools (e.g. inside a transaction) instead of executing them directly. */
+    runWrite?: (toolName: string, input: unknown, executeOptions: unknown) => Promise<unknown>;
+    isWrite?: (toolName: string) => boolean;
 }
 
 export function canUseAdminTool(ctx: RequestContext, toolName: string): boolean {
@@ -193,6 +196,9 @@ export function restrictAdminTools(ctx: RequestContext, tools: ToolSet, restrict
                           }
                           if (restrictOptions.requiresConfirmation?.(name) && restrictOptions.onConfirmationRequired) {
                               return restrictOptions.onConfirmationRequired(name, (input ?? {}) as Record<string, unknown>);
+                          }
+                          if (restrictOptions.runWrite && restrictOptions.isWrite?.(name)) {
+                              return restrictOptions.runWrite(name, input, executeOptions);
                           }
                           return execute(input, executeOptions);
                       },
