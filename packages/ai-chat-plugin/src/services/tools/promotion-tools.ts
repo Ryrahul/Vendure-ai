@@ -9,6 +9,8 @@ export class PromotionTools {
     constructor(
         private connection: TransactionalConnection,
         private orderService: OrderService,
+        /** When false, coupon codes are never sent to the model or the client. */
+        private exposeCouponCodes = false,
     ) {}
 
     /**
@@ -23,18 +25,23 @@ export class PromotionTools {
             // Conditions and actions are stored as simple-json columns directly on the promotion table.
             // Use NOW() directly in SQL so PostgreSQL handles timezone comparison natively
             // instead of passing a JS-generated ISO string which can cause timezone mismatches.
+            // Only promotions of the shopper's channel, one translation each (preferring the
+            // shopper's language).
             const result = await this.connection.rawConnection.query(
-                `SELECT p.id, p."couponCode", p."perCustomerUsageLimit", p."usageLimit",
+                `SELECT DISTINCT ON (p.id)
+                        p.id, p."couponCode", p."perCustomerUsageLimit", p."usageLimit",
                         p."startsAt", p."endsAt", p.enabled,
                         p.conditions, p.actions,
                         t.name, t.description
                  FROM promotion p
                  JOIN promotion_translation t ON t."baseId" = p.id
+                 JOIN promotion_channels_channel pc ON pc."promotionId" = p.id AND pc."channelId" = $1
                  WHERE p.enabled = true
                    AND p."deletedAt" IS NULL
                    AND (p."startsAt" IS NULL OR p."startsAt" <= NOW())
                    AND (p."endsAt" IS NULL OR p."endsAt" >= NOW())
-                 ORDER BY p.id ASC`,
+                 ORDER BY p.id ASC, (t."languageCode" = $2) DESC`,
+                [ctx.channelId, ctx.languageCode],
             );
 
             this.logger.debug(`getAvailablePromotions: query returned ${(result as any[]).length} rows`);
@@ -45,7 +52,8 @@ export class PromotionTools {
                     id: String(row.id),
                     name: String(row.name ?? ''),
                     description: String(row.description ?? ''),
-                    couponCode: row.couponCode ? String(row.couponCode) : undefined,
+                    couponCode: row.couponCode && this.exposeCouponCodes ? String(row.couponCode) : undefined,
+                    requiresCouponCode: !!row.couponCode,
                     startsAt: row.startsAt ? new Date(row.startsAt).toISOString() : undefined,
                     endsAt: row.endsAt ? new Date(row.endsAt).toISOString() : undefined,
                     perCustomerUsageLimit: row.perCustomerUsageLimit ? Number(row.perCustomerUsageLimit) : undefined,
@@ -76,8 +84,8 @@ export class PromotionTools {
                 promotions.push(promo);
             }
 
-            const couponPromos = promotions.filter(p => p.couponCode);
-            const autoPromos = promotions.filter(p => !p.couponCode);
+            const couponPromos = promotions.filter(p => p.requiresCouponCode);
+            const autoPromos = promotions.filter(p => !p.requiresCouponCode);
 
             let summary = '';
             if (promotions.length === 0) {
@@ -91,7 +99,7 @@ export class PromotionTools {
                 }
                 if (couponPromos.length > 0) {
                     parts.push(`Coupon promotions (need a coupon code): ${couponPromos.map(p =>
-                        `"${p.name}" — code: "${p.couponCode}"${p.discountSummary ? ', discount: ' + p.discountSummary : ''}${p.conditions?.length ? ' (requires: ' + p.conditions.join(', ') + ')' : ''}${p.endsAt ? ', expires: ' + new Date(p.endsAt).toLocaleDateString() : ''}`,
+                        `"${p.name}"${p.couponCode ? ` — code: "${p.couponCode}"` : ' — code not disclosed; do not guess or invent one, the customer must already have it'}${p.discountSummary ? ', discount: ' + p.discountSummary : ''}${p.conditions?.length ? ' (requires: ' + p.conditions.join(', ') + ')' : ''}${p.endsAt ? ', expires: ' + new Date(p.endsAt).toLocaleDateString() : ''}`,
                     ).join('; ')}`);
                 }
                 summary = parts.join('. ');

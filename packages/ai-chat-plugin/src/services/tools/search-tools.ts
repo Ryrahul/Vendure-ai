@@ -1,259 +1,191 @@
 import { Logger } from '@nestjs/common';
-import { RequestContext, TransactionalConnection, Product, Collection } from '@vendure/core';
+import { RequestContext } from '@vendure/core';
 import { EmbeddingService } from '../embedding.service';
 import { ProductEmbeddingService } from '../product-embedding.service';
 import { CollectionEmbeddingService } from '../collection-embedding.service';
 import { ChatResultMapper } from '../chat-result-mapper';
+import { StorefrontApiService, type StorefrontProduct } from '../storefront-api.service';
 import { MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE, formatPrice } from '../../constants';
 import type { AiChatProduct, ToolResult } from '../types';
 
+/** Vector candidates fetched before visibility filtering, so hidden products don't starve the result. */
+const VECTOR_CANDIDATE_FACTOR = 4;
+
+/**
+ * Shop search tools. Keyword search, price filtering and collection lookup go through the
+ * store's Shop API (see StorefrontApiService), so they use whichever search engine is
+ * configured. Semantic results come from pgvector but are hydrated through the Shop API
+ * too, so a product hidden from the storefront is never suggested.
+ */
 export class SearchTools {
     private readonly logger = new Logger(SearchTools.name);
 
     constructor(
-        private connection: TransactionalConnection,
+        private storefront: StorefrontApiService,
         private embeddingService: EmbeddingService,
         private productEmbeddingService: ProductEmbeddingService,
         private collectionEmbeddingService: CollectionEmbeddingService,
         private mapper: ChatResultMapper,
-        private fulltextSearchService: any,
     ) {}
 
-    async searchProducts(
-        ctx: RequestContext,
-        args: Record<string, unknown>,
-    ): Promise<ToolResult> {
+    async searchProducts(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
         const query = String(args.query ?? '').trim();
-        const take = Math.min(Number(args.take) || 10, 20);
+        const take = clamp(Number(args.take) || 10, 1, 20);
         if (!query) {
             return { products: [], collections: [], summary: 'No search query provided' };
         }
-
-        let mapped: AiChatProduct[];
-
-        if (this.fulltextSearchService) {
-            // Use Vendure's search index (same as storefront)
-            const result = await this.fulltextSearchService.search(ctx, {
-                term: query,
-                take,
-                skip: 0,
-                groupByProduct: true,
-            }, true);
-
-            this.logger.debug(`FulltextSearch returned ${result.items.length} items for "${query}": ${result.items.map((i: any) => `${i.productName}(pid:${i.productId},vid:${i.productVariantId})`).join(', ')}`);
-            mapped = result.items.map((item: any) => {
-                const price = item.price && 'value' in item.price
-                    ? item.price.value
-                    : item.price && 'min' in item.price
-                        ? item.price.min
-                        : 0;
-                return {
-                    id: String(item.productId),
-                    name: String(item.productName ?? ''),
-                    slug: String(item.slug ?? ''),
-                    price: Number(price),
-                    image: this.mapper.resolveAssetUrl(item.productAsset?.preview ?? null),
-                    variantId: String(item.productVariantId),
-                };
-            });
-        } else {
-            // Fallback: raw DB query
-            const repo = this.connection.rawConnection.getRepository(Product);
-            const products = await repo.createQueryBuilder('product')
-                .leftJoinAndSelect('product.translations', 'translation')
-                .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
-                .leftJoinAndSelect('product.variants', 'variant')
-                .leftJoinAndSelect('variant.productVariantPrices', 'price')
-                .where('product.deletedAt IS NULL')
-                .andWhere('product.enabled = :enabled', { enabled: true })
-                .andWhere(
-                    '(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term)',
-                    { term: `%${query.toLowerCase()}%` },
-                )
-                .take(take)
-                .getMany();
-            mapped = this.mapper.mapProducts(products);
+        const result = await this.guard(`search "${query}"`, () => this.storefront.search(ctx, { term: query, take }));
+        if ('error' in result) {
+            return result.error;
         }
-
+        const products = result.items.map(p => this.toChatProduct(p));
         return {
-            products: mapped,
+            products,
             collections: [],
-            summary: mapped.length > 0
-                ? `Found ${mapped.length} product(s) matching "${query}". The products with their variantIds are: ${mapped.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price)})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
+            summary: products.length
+                ? `Found ${products.length} product(s) matching "${query}". ${describeProducts(products)}`
                 : `No products found matching "${query}".`,
         };
     }
 
-    async vectorSearch(
-        ctx: RequestContext,
-        args: Record<string, unknown>,
-    ): Promise<ToolResult> {
+    async vectorSearch(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
         const query = String(args.query ?? '').trim();
         if (!query) {
             return { products: [], collections: [], summary: 'No search query provided' };
         }
-
         const queryEmbedding = await this.embeddingService.embed(query);
+        const candidates = MAX_CHAT_PRODUCTS * VECTOR_CANDIDATE_FACTOR;
 
-        let similar = await this.productEmbeddingService.findSimilar(
-            ctx, queryEmbedding, MAX_CHAT_PRODUCTS, SIMILARITY_THRESHOLD,
-        );
+        let similar = await this.productEmbeddingService.findSimilar(ctx, queryEmbedding, candidates, SIMILARITY_THRESHOLD);
         if (similar.length === 0) {
-            const fallback = await this.productEmbeddingService.findSimilar(
-                ctx, queryEmbedding, MAX_CHAT_PRODUCTS,
-            );
-            if (fallback.length > 0 && (fallback[0]?.score ?? 0) >= FALLBACK_MIN_SCORE) {
+            const fallback = await this.productEmbeddingService.findSimilar(ctx, queryEmbedding, candidates);
+            if ((fallback[0]?.score ?? 0) >= FALLBACK_MIN_SCORE) {
                 similar = fallback;
             }
         }
-
         let similarCollections = await this.collectionEmbeddingService.findSimilar(
-            ctx, queryEmbedding, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD,
+            ctx, queryEmbedding, MAX_CHAT_COLLECTIONS * VECTOR_CANDIDATE_FACTOR, SIMILARITY_THRESHOLD,
         );
         if (similarCollections.length === 0) {
-            const fallbackColl = await this.collectionEmbeddingService.findSimilar(
-                ctx, queryEmbedding, MAX_CHAT_COLLECTIONS,
-            );
-            if (fallbackColl.length > 0 && (fallbackColl[0]?.score ?? 0) >= FALLBACK_MIN_SCORE) {
-                similarCollections = fallbackColl;
+            const fallback = await this.collectionEmbeddingService.findSimilar(ctx, queryEmbedding, MAX_CHAT_COLLECTIONS);
+            if ((fallback[0]?.score ?? 0) >= FALLBACK_MIN_SCORE) {
+                similarCollections = fallback;
             }
         }
 
-        const products = similar.length > 0 ? await this.mapper.loadProductsByIds(similar.map(s => s.productId)) : [];
-        const collections = similarCollections.length > 0 ? await this.mapper.loadCollectionsByIds(similarCollections.map(s => s.collectionId)) : [];
-
+        const hydrated = await this.guard(`semantic search "${query}"`, async () => ({
+            products: await this.storefront.getProductsByIds(ctx, unique(similar.map(s => s.productId))),
+            collections: await this.storefront.getCollectionsByIds(ctx, unique(similarCollections.map(s => s.collectionId))),
+        }));
+        if ('error' in hydrated) {
+            return hydrated.error;
+        }
+        const products = hydrated.products.slice(0, MAX_CHAT_PRODUCTS).map(p => this.toChatProduct(p));
+        const collections = hydrated.collections.slice(0, MAX_CHAT_COLLECTIONS);
         return {
             products,
             collections,
-            summary: products.length > 0
-                ? `Found ${products.length} product(s) related to "${query}". The products with their variantIds are: ${products.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price)})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
+            summary: products.length
+                ? `Found ${products.length} product(s) related to "${query}". ${describeProducts(products)}`
                 : `No products found related to "${query}".`,
         };
     }
 
-    async getCollections(
-        ctx: RequestContext,
-        args: Record<string, unknown>,
-    ): Promise<ToolResult> {
+    async getCollections(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
         const query = String(args.query ?? '').trim();
-        const repo = this.connection.rawConnection.getRepository(Collection);
-
-        let qb = repo.createQueryBuilder('collection')
-            .leftJoinAndSelect('collection.translations', 'translation')
-            .where('collection.isPrivate = :isPrivate', { isPrivate: false })
-            .andWhere('collection.isRoot = :isRoot', { isRoot: false });
-
-        if (query) {
-            qb = qb.andWhere('LOWER(translation.name) LIKE :term', { term: `%${query.toLowerCase()}%` });
+        const result = await this.guard('collection lookup', () => this.storefront.findCollections(ctx, query || undefined, 15));
+        if ('error' in result) {
+            return result.error;
         }
-
-        const collections = await qb.take(15).getMany();
-        const mapped = this.mapper.mapCollections(collections);
-
         return {
             products: [],
-            collections: mapped,
-            summary: mapped.length > 0
-                ? `Found ${mapped.length} collection(s)${query ? ` matching "${query}"` : ''}: ${mapped.map(c => c.name).join(', ')}.`
+            collections: result,
+            summary: result.length
+                ? `Found ${result.length} collection(s)${query ? ` matching "${query}"` : ''}: ${result.map(c => c.name).join(', ')}.`
                 : `No collections found${query ? ` matching "${query}"` : ''}.`,
         };
     }
 
-    // todo: esma elastic search ko price range wala halne aaile hawa in memory sorting xa
-    async filterByPrice(
-        ctx: RequestContext,
-        args: Record<string, unknown>,
-    ): Promise<ToolResult> {
+    async filterByPrice(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
         const minPrice = args.minPrice != null ? Number(args.minPrice) : undefined;
         const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : undefined;
         const query = String(args.query ?? '').trim();
 
-        let mapped: AiChatProduct[];
-
-        if (query && this.fulltextSearchService) {
-            const fetchSize = 50;
-            const result = await this.fulltextSearchService.search(ctx, {
-                term: query,
-                take: fetchSize,
-                skip: 0,
-                groupByProduct: true,
-            }, true);
-
-            this.logger.debug(`filterByPrice: FulltextSearch returned ${result.items.length} items for "${query}"`);
-
-            // Map results and extract price
-            let candidates = result.items.map((item: any) => {
-                const price = item.price && 'value' in item.price
-                    ? item.price.value
-                    : item.price && 'min' in item.price
-                        ? item.price.min
-                        : 0;
-                return {
-                    id: String(item.productId),
-                    name: String(item.productName ?? ''),
-                    slug: String(item.slug ?? ''),
-                    price: Number(price),
-                    image: this.mapper.resolveAssetUrl(item.productAsset?.preview ?? null),
-                    variantId: String(item.productVariantId),
-                };
-            });
-
-            // Apply price filter in memory
-            if (minPrice != null) {
-                candidates = candidates.filter((p: any) => p.price >= minPrice);
-            }
-            if (maxPrice != null) {
-                candidates = candidates.filter((p: any) => p.price <= maxPrice);
-            }
-
-            // Sort by price ascending and limit
-            candidates.sort((a: any, b: any) => a.price - b.price);
-            mapped = candidates.slice(0, MAX_CHAT_PRODUCTS);
-        } else {
-            // Fallback: raw DB query (no keyword, or FulltextSearchService unavailable)
-            const repo = this.connection.rawConnection.getRepository(Product);
-            let qb = repo.createQueryBuilder('product')
-                .leftJoinAndSelect('product.translations', 'translation')
-                .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
-                .leftJoinAndSelect('product.variants', 'variant')
-                .leftJoinAndSelect('variant.productVariantPrices', 'variantPrice')
-                .where('product.deletedAt IS NULL')
-                .andWhere('product.enabled = :enabled', { enabled: true });
-
-            if (query) {
-                // Also search collection names so terms like "electronics" match
-                // In Vendure, Collection ↔ ProductVariant is a many-to-many relation
-                qb = qb
-                    .leftJoin('variant.collections', 'collection')
-                    .leftJoin('collection.translations', 'collectionTranslation')
-                    .andWhere(
-                        '(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term OR LOWER(collectionTranslation.name) LIKE :term)',
-                        { term: `%${query.toLowerCase()}%` },
-                    );
-            }
-            if (minPrice != null && maxPrice != null) {
-                qb = qb.andWhere('variantPrice.price BETWEEN :minPrice AND :maxPrice', { minPrice, maxPrice });
-            } else if (minPrice != null) {
-                qb = qb.andWhere('variantPrice.price >= :minPrice', { minPrice });
-            } else if (maxPrice != null) {
-                qb = qb.andWhere('variantPrice.price <= :maxPrice', { maxPrice });
-            }
-
-            qb = qb.orderBy('variantPrice.price', 'ASC').take(MAX_CHAT_PRODUCTS);
-            const products = await qb.getMany();
-            mapped = this.mapper.mapProducts(products);
+        const result = await this.guard('price search', () =>
+            this.storefront.search(ctx, {
+                term: query || undefined,
+                take: MAX_CHAT_PRODUCTS,
+                minPriceWithTax: minPrice,
+                maxPriceWithTax: maxPrice,
+                sortByPrice: 'ASC',
+            }),
+        );
+        if ('error' in result) {
+            return result.error;
         }
-
-        const priceDesc = minPrice != null && maxPrice != null
-            ? `between ${formatPrice(minPrice)} and ${formatPrice(maxPrice)}`
-            : minPrice != null ? `above ${formatPrice(minPrice)}` : maxPrice != null ? `under ${formatPrice(maxPrice)}` : '';
-
+        const products = result.items.map(p => this.toChatProduct(p));
+        const currency = products[0]?.currencyCode ?? ctx.currencyCode;
+        const priceDesc =
+            minPrice != null && maxPrice != null
+                ? `between ${formatPrice(minPrice, currency)} and ${formatPrice(maxPrice, currency)}`
+                : minPrice != null
+                  ? `above ${formatPrice(minPrice, currency)}`
+                  : maxPrice != null
+                    ? `under ${formatPrice(maxPrice, currency)}`
+                    : '';
         return {
-            products: mapped,
+            products,
             collections: [],
-            summary: mapped.length > 0
-                ? `Found ${mapped.length} product(s) ${priceDesc}${query ? ` matching "${query}"` : ''}. The products with their variantIds are: ${mapped.map(p => `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price)})`).join(', ')}. Products are displayed as cards in the UI — do not list them again in your text response.`
+            summary: products.length
+                ? `Found ${products.length} product(s) ${priceDesc}${query ? ` matching "${query}"` : ''}. ${describeProducts(products)}`
                 : `No products found ${priceDesc}${query ? ` matching "${query}"` : ''}.`,
         };
     }
+
+    private toChatProduct(p: StorefrontProduct): AiChatProduct {
+        return {
+            id: p.productId,
+            name: p.productName,
+            slug: p.slug,
+            price: p.priceWithTax,
+            currencyCode: p.currencyCode,
+            image: this.mapper.resolveAssetUrl(p.image),
+            variantId: p.variantId,
+            ...(p.inStock !== undefined ? { inStock: p.inStock } : {}),
+        };
+    }
+
+    /** Turns a Shop API failure into a tool result the model can relay, instead of an exception. */
+    private async guard<T>(what: string, fn: () => Promise<T>): Promise<T | { error: ToolResult }> {
+        try {
+            return await fn();
+        } catch (e: any) {
+            this.logger.error(`Storefront ${what} failed: ${e?.message}`);
+            return {
+                error: {
+                    products: [],
+                    collections: [],
+                    summary: 'Product search is temporarily unavailable. Apologise and suggest the customer try again shortly.',
+                },
+            };
+        }
+    }
+}
+
+function describeProducts(products: AiChatProduct[]): string {
+    const list = products
+        .map(p => {
+            const stock = p.inStock === false ? ', out of stock' : '';
+            return `"${p.name}" (variantId: ${p.variantId}, price: ${formatPrice(p.price, p.currencyCode)}${stock})`;
+        })
+        .join(', ');
+    return `The products with their variantIds are: ${list}. Products are displayed as cards in the UI — do not list them again in your text response.`;
+}
+
+function clamp(n: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, n));
+}
+
+function unique<T>(items: T[]): T[] {
+    return Array.from(new Set(items));
 }

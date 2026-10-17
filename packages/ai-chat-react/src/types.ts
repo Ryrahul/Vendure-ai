@@ -107,6 +107,8 @@ export interface VendureAiChatProps {
      * When set, `vendureUrl` is ignored for the chat transport.
      */
     chatEndpoint?: string;
+    /** Channel token of the storefront's channel (sent as `vendure-token`). Omit for the default channel. */
+    channelToken?: string;
 
     // Appearance
     /** Position of the chat button. Defaults to "bottom-right" */
@@ -165,4 +167,9 @@ export interface UseVendureChatOptions {
      * When set, `vendureUrl` is ignored for the chat transport.
      */
     chatEndpoint?: string;
+    /**
+     * Channel token of the storefront's channel, sent as the `vendure-token` header so the
+     * assistant searches, prices and shops in that channel. Omit for the default channel.
+     */
+    channelToken?: string;
 }

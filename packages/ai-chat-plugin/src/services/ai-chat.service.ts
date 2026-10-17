@@ -10,6 +10,7 @@ import { EmbeddingService } from './embedding.service';
 import { ProductEmbeddingService } from './product-embedding.service';
 import { CollectionEmbeddingService } from './collection-embedding.service';
 import { ChatResultMapper } from './chat-result-mapper';
+import { StorefrontApiService } from './storefront-api.service';
 import { SearchTools } from './tools/search-tools';
 import { CartTools } from './tools/cart-tools';
 import { OrderTools } from './tools/order-tools';
@@ -61,7 +62,6 @@ export class AiChatService implements OnModuleInit {
     private openai: ReturnType<typeof createOpenAI>;
     private azure: ReturnType<typeof createAzure> | null = null;
     private azureDeploymentName: string = '';
-    private fulltextSearchService: any; // Resolved at runtime from DefaultSearchPlugin's module
     private assetUrlPrefix: string = '';
 
     private mapper!: ChatResultMapper;
@@ -81,6 +81,7 @@ export class AiChatService implements OnModuleInit {
         private orderService: OrderService,
         private customerService: CustomerService,
         private configService: ConfigService,
+        private storefrontApiService: StorefrontApiService,
     ) {
         this.openai = createOpenAI({ apiKey: options.openaiApiKey });
         if (options.azureOpenai) {
@@ -93,16 +94,6 @@ export class AiChatService implements OnModuleInit {
     }
 
     async onModuleInit() {
-        try {
-            // Dynamically resolve FulltextSearchService from DefaultSearchPlugin's module
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const mod = require('@vendure/core/dist/plugin/default-search-plugin/fulltext-search.service');
-            this.fulltextSearchService = this.moduleRef.get(mod.FulltextSearchService, { strict: false });
-            this.logger.log('FulltextSearchService resolved successfully');
-        } catch (e) {
-            this.logger.warn('FulltextSearchService not available, falling back to DB queries for search');
-        }
-
         // Resolve asset URL prefix: explicit config > auto-detect from apiOptions
         if (this.options.assetBaseUrl) {
             this.assetUrlPrefix = this.options.assetBaseUrl.endsWith('/')
@@ -125,17 +116,16 @@ export class AiChatService implements OnModuleInit {
         // Initialize helper classes
         this.mapper = new ChatResultMapper(this.connection, this.assetUrlPrefix);
         this.searchTools = new SearchTools(
-            this.connection,
+            this.storefrontApiService,
             this.embeddingService,
             this.productEmbeddingService,
             this.collectionEmbeddingService,
             this.mapper,
-            this.fulltextSearchService,
         );
         this.cartTools = new CartTools(this.connection, this.orderService, this.mapper);
         this.orderTools = new OrderTools(this.connection, this.mapper);
         this.checkoutTools = new CheckoutTools(this.connection, this.orderService);
-        this.promotionTools = new PromotionTools(this.connection, this.orderService);
+        this.promotionTools = new PromotionTools(this.connection, this.orderService, this.options.exposeCouponCodes ?? false);
     }
 
     private buildTools(ctx: RequestContext, customerId?: string | number): ToolSet {
@@ -163,7 +153,7 @@ export class AiChatService implements OnModuleInit {
                 execute: async ({ query }) => this.searchTools.getCollections(ctx, { query }),
             }),
             filterByPrice: tool({
-                description: 'Filter products by price range / budget. Prices are in the smallest currency unit (cents). "under 50 dollars" = maxPrice 5000.',
+                description: 'Filter products by price range / budget, using the price the customer pays (tax included) in the store currency. Prices are in the smallest currency unit, e.g. "under 50" = maxPrice 5000.',
                 inputSchema: z.object({
                     minPrice: z.number().optional().describe('Min price in cents'),
                     maxPrice: z.number().optional().describe('Max price in cents'),
@@ -172,7 +162,7 @@ export class AiChatService implements OnModuleInit {
                 execute: async ({ minPrice, maxPrice, query }) => this.searchTools.filterByPrice(ctx, { minPrice, maxPrice, query }),
             }),
             addToCart: tool({
-                description: 'Add a product to the customer\'s shopping cart. The variantId MUST be the exact numeric ID from a previous search result. Never guess or fabricate a variantId.',
+                description: 'Add a product to the customer\'s shopping cart. The variantId MUST be the exact variantId from a previous search result. Never guess or fabricate a variantId.',
                 inputSchema: z.object({
                     variantId: z.string().describe('The EXACT numeric variant ID from a previous search result'),
                     quantity: z.number().optional().describe('Quantity to add (default 1)'),
@@ -293,6 +283,7 @@ export class AiChatService implements OnModuleInit {
         userMessage: string,
         conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
         customerId?: string | number,
+        abortSignal?: AbortSignal,
     ): ReturnType<typeof streamText> {
         const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
             { role: 'system', content: SYSTEM_PROMPT },
@@ -304,7 +295,8 @@ export class AiChatService implements OnModuleInit {
 
         // OpenAI is primary model
         return streamText({
-            model: this.openai('gpt-4o-mini'),
+            model: this.openai(this.options.chatModel ?? 'gpt-4o-mini'),
+            abortSignal,
             messages,
             tools,
             stopWhen: stepCountIs(12),
@@ -332,7 +324,7 @@ export class AiChatService implements OnModuleInit {
     ): Promise<ChatResult> {
         // Try OpenAI first, fall back to Azure if available
         try {
-            return await this.runShopChat(ctx, userMessage, conversationHistory, customerId, this.openai('gpt-4o-mini'));
+            return await this.runShopChat(ctx, userMessage, conversationHistory, customerId, this.openai(this.options.chatModel ?? 'gpt-4o-mini'));
         } catch (primaryError) {
             this.logger.error(`Primary OpenAI failed: ${primaryError}`);
             if (this.azure) {

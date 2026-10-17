@@ -1,6 +1,6 @@
-import { Body, Controller, Inject, Post, Req, Res, Logger } from '@nestjs/common';
-import { Request, Response } from 'express';
-import { RequestContextService, CustomerService, SessionService, ConfigService } from '@vendure/core';
+import { BadRequestException, Body, Controller, Inject, Post, Res, Logger } from '@nestjs/common';
+import { Response } from 'express';
+import { Allow, Ctx, CustomerService, Permission, RequestContext } from '@vendure/core';
 import {
     AiChatService,
     AiChatProduct,
@@ -15,7 +15,10 @@ import {
     SetShippingMethodAction,
 } from '../services/ai-chat.service';
 import { ConversationCacheService } from '../services/conversation-cache.service';
-import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from '../constants';
+import { AI_ASSISTANT_OPTIONS, sanitizeHistory, type AiAssistantPluginOptions } from '../constants';
+
+/** Client-generated conversation ids: opaque, URL-safe, long enough to be unguessable. */
+const CONVERSATION_ID_PATTERN = /^[A-Za-z0-9_-]{16,100}$/;
 
 export type {
     AiChatProduct,
@@ -76,10 +79,7 @@ export class AiAssistantController {
 
     constructor(
         @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
-        private requestContextService: RequestContextService,
         private customerService: CustomerService,
-        private sessionService: SessionService,
-        private configService: ConfigService,
         private aiChatService: AiChatService,
         private conversationCacheService: ConversationCacheService,
     ) {
@@ -120,11 +120,8 @@ export class AiAssistantController {
 
         // Simple format: { message, history }
         return {
-            message: (body.message ?? '').trim(),
-            history: (body.history ?? []).map(msg => ({
-                role: msg.role as 'user' | 'assistant',
-                content: msg.content,
-            })),
+            message: (typeof body.message === 'string' ? body.message : '').trim(),
+            history: sanitizeHistory(body.history, Number.MAX_SAFE_INTEGER),
         };
     }
 
@@ -166,18 +163,27 @@ export class AiAssistantController {
      * Resolve conversation history: prefer server-side cache when conversationId
      * is present, otherwise fall back to the history sent in the request body.
      */
-    private async resolveHistory(body: AiChatRequest): Promise<{
+    private async resolveHistory(body: AiChatRequest, ownerKey: string): Promise<{
         message: string;
         history: Array<{ role: 'user' | 'assistant'; content: string }>;
         conversationId?: string;
     }> {
-        const { message, history: bodyHistory } = this.extractMessageAndHistory(body);
-        const conversationId = body.conversationId;
+        const { message, history: rawBodyHistory } = this.extractMessageAndHistory(body);
+        const maxLength = this.options.maxMessageLength ?? 2000;
+        if (message.length > maxLength) {
+            throw new BadRequestException(`Message too long (max ${maxLength} characters)`);
+        }
+        const maxHistory = this.options.maxHistoryMessages ?? 20;
+        const bodyHistory = sanitizeHistory(rawBodyHistory, maxHistory);
+        const conversationId =
+            typeof body.conversationId === 'string' && CONVERSATION_ID_PATTERN.test(body.conversationId)
+                ? body.conversationId
+                : undefined;
 
         if (this.cacheEnabled && conversationId) {
-            // Fetch history from server-side cache
-            const cached = await this.conversationCacheService.getHistory(conversationId);
-            const history = cached?.messages ?? [];
+            // Fetch history from server-side cache, scoped to this customer/session
+            const cached = await this.conversationCacheService.getHistory(ownerKey, conversationId);
+            const history = sanitizeHistory(cached?.messages, maxHistory);
             this.logger.debug(
                 `[CACHE] Conversation ${conversationId}: ${history.length} cached messages (skipped ${bodyHistory.length} from request body)`,
             );
@@ -189,32 +195,17 @@ export class AiAssistantController {
     }
 
     /**
-     * Helper: extract auth context from request
+     * The customer (if logged in) and an owner key that scopes cached conversations to
+     * this customer, or to this session for guests.
      */
-    private async resolveAuthContext(req: Request) {
-        const authHeader = req.get('Authorization');
-        const tokenMatch = authHeader?.trim().match(/^bearer\s(.+)$/i);
-        const sessionToken = tokenMatch?.[1];
-
-        this.logger.debug(`[AUTH] Session token present: ${!!sessionToken}`);
-
-        let session;
-        if (sessionToken) {
-            session = await this.sessionService.getSessionFromToken(sessionToken);
-            this.logger.debug(`[AUTH] Session found: ${!!session}, userId: ${session?.user?.id ?? 'NONE'}`);
-        }
-
-        const ctx = await this.requestContextService.fromRequest(req, undefined, undefined, session);
-        this.logger.debug(`[AUTH] ctx.activeUserId: ${ctx.activeUserId ?? 'NONE'}`);
-
+    private async resolveCustomer(ctx: RequestContext) {
         let customerId: string | number | undefined;
         if (ctx.activeUserId) {
             const customer = await this.customerService.findOneByUserId(ctx, ctx.activeUserId);
             customerId = customer?.id;
-            this.logger.debug(`[AUTH] customerId: ${customerId ?? 'NONE'}`);
         }
-
-        return { ctx, customerId };
+        const ownerKey = customerId != null ? `customer:${customerId}` : ctx.session?.id ? `session:${ctx.session.id}` : 'anonymous';
+        return { customerId, ownerKey };
     }
 
     /**
@@ -222,9 +213,10 @@ export class AiAssistantController {
      * Returns the full JSON response after all tool calls complete.
      */
     @Post('chat')
-    async chat(@Body() body: AiChatRequest, @Req() req: Request): Promise<AiChatResponse> {
-        const { ctx, customerId } = await this.resolveAuthContext(req);
-        const { message: query, history, conversationId } = await this.resolveHistory(body);
+    @Allow(Permission.Public)
+    async chat(@Ctx() ctx: RequestContext, @Body() body: AiChatRequest): Promise<AiChatResponse> {
+        const { customerId, ownerKey } = await this.resolveCustomer(ctx);
+        const { message: query, history, conversationId } = await this.resolveHistory(body, ownerKey);
 
         if (!query) {
             return {
@@ -239,6 +231,7 @@ export class AiAssistantController {
         // Cache the new turn if conversationId is present
         if (conversationId) {
             await this.conversationCacheService.appendMessages(
+                ownerKey,
                 conversationId,
                 query,
                 result.message,
@@ -268,9 +261,10 @@ export class AiAssistantController {
      * as data stream annotations (custom JSON messages) alongside the text stream.
      */
     @Post('stream')
-    async stream(@Body() body: AiChatRequest, @Req() req: Request, @Res() res: Response): Promise<void> {
-        const { ctx, customerId } = await this.resolveAuthContext(req);
-        const { message: query, history, conversationId } = await this.resolveHistory(body);
+    @Allow(Permission.Public)
+    async stream(@Ctx() ctx: RequestContext, @Body() body: AiChatRequest, @Res() res: Response): Promise<void> {
+        const { customerId, ownerKey } = await this.resolveCustomer(ctx);
+        const { message: query, history, conversationId } = await this.resolveHistory(body, ownerKey);
 
         if (!query) {
             res.setHeader('Content-Type', 'application/json');
@@ -282,7 +276,14 @@ export class AiAssistantController {
             return;
         }
 
-        const streamResult = this.aiChatService.streamChat(ctx, query, history, customerId);
+        // Stop generating (and spending tokens) if the shopper disconnects mid-answer.
+        const abort = new AbortController();
+        res.on('close', () => {
+            if (!res.writableFinished) {
+                abort.abort();
+            }
+        });
+        const streamResult = this.aiChatService.streamChat(ctx, query, history, customerId, abort.signal);
 
         // Use the AI SDK's toUIMessageStreamResponse for useChat() compatibility
         const streamResponse = streamResult.toUIMessageStreamResponse();
@@ -317,11 +318,20 @@ export class AiAssistantController {
         if (conversationId) {
             try {
                 const fullText = await streamResult.text;
+                // Keep tool summaries (e.g. product variantIds) so follow-ups like
+                // "add the second one to my cart" still have the context they need.
+                const toolSummaries = (await streamResult.steps)
+                    .flatMap(step => step.toolResults ?? [])
+                    .map(r => (r as { output?: { summary?: unknown } }).output?.summary)
+                    .filter((summary): summary is string => typeof summary === 'string')
+                    .map(summary => `[Tool result: ${summary}]`);
                 await this.conversationCacheService.appendMessages(
+                    ownerKey,
                     conversationId,
                     query,
-                    fullText,
+                    [fullText, ...toolSummaries].filter(Boolean).join('\n'),
                     customerId,
+                    this.options.maxHistoryMessages ?? 20,
                 );
             } catch (e) {
                 this.logger.error(`Failed to cache conversation turn: ${e}`);

@@ -1,3 +1,5 @@
+import { PermissionDefinition } from '@vendure/core';
+
 export const AI_ASSISTANT_OPTIONS = Symbol('AI_ASSISTANT_OPTIONS');
 export const EMBEDDING_DIMENSIONS = 1536; // text-embedding-3-small
 export const EMBED_ALL_QUEUE_NAME = 'embed-all';
@@ -16,12 +18,46 @@ export const MAX_CHAT_COLLECTIONS = 3;
  * Used in tool result summaries so the LLM sees formatted prices (e.g. "$42.63")
  * instead of raw cent values that it might misinterpret.
  */
-export function formatPrice(cents: number): string {
-    return `$${(cents / 100).toFixed(2)}`;
+export function formatPrice(cents: number, currencyCode = 'USD'): string {
+    try {
+        return new Intl.NumberFormat('en', { style: 'currency', currency: currencyCode }).format(cents / 100);
+    } catch {
+        return `${(cents / 100).toFixed(2)} ${currencyCode}`;
+    }
 }
 
 export interface AiAssistantPluginOptions {
     openaiApiKey: string;
+    /**
+     * Chat model used for shop and admin conversations.
+     * @default 'gpt-4o-mini'
+     */
+    chatModel?: string;
+    /**
+     * URL of this server's Shop API, used for product search and catalog lookups so
+     * that whatever search plugin is configured (DefaultSearchPlugin, Elasticsearch,
+     * Typesense, Meilisearch, …) is used, with the storefront's visibility rules.
+     *
+     * Defaults to `http://127.0.0.1:<apiOptions.port>/<apiOptions.shopApiPath>`. Set it
+     * when the server is not reachable on that address from itself.
+     */
+    shopApiUrl?: string;
+    /**
+     * Whether the shop assistant may reveal promotion coupon codes to shoppers.
+     * When false, it tells shoppers a code is required but never discloses it.
+     * @default false
+     */
+    exposeCouponCodes?: boolean;
+    /**
+     * Maximum length (characters) of a single shopper message; longer messages are rejected.
+     * @default 2000
+     */
+    maxMessageLength?: number;
+    /**
+     * Maximum number of previous messages sent to the model per turn.
+     * @default 20
+     */
+    maxHistoryMessages?: number;
     embeddingModel?: string;
     /**
      * Base URL for product asset images. Should match your AssetServerPlugin's
@@ -55,4 +91,34 @@ export interface AiAssistantPluginOptions {
         /** Azure deployment name (e.g. "gpt-4.1") */
         deploymentName: string;
     };
+}
+
+/**
+ * Required to use the AI admin assistant. SuperAdmins have it automatically; grant it to
+ * other roles explicitly. Each admin tool additionally requires the same permission as the
+ * equivalent Admin API operation (see admin-tool-permissions.ts).
+ */
+export const aiAdminAssistantPermission = new PermissionDefinition({
+    name: 'UseAiAdminAssistant',
+    description: 'Allows using the AI admin assistant in the Dashboard',
+});
+
+export type ChatHistoryEntry = { role: 'user' | 'assistant'; content: string };
+
+/**
+ * Client-supplied history is untrusted: keep only user/assistant turns with string
+ * content (a client must never be able to inject a `system` message), cap each message
+ * and keep only the most recent turns.
+ */
+export function sanitizeHistory(history: unknown, maxMessages: number, maxLength = 8000): ChatHistoryEntry[] {
+    if (!Array.isArray(history)) {
+        return [];
+    }
+    return history
+        .filter(
+            (m): m is ChatHistoryEntry =>
+                !!m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.length > 0,
+        )
+        .map(m => ({ role: m.role, content: m.content.slice(0, maxLength) }))
+        .slice(-maxMessages);
 }

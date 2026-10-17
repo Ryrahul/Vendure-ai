@@ -1,0 +1,27 @@
+# Changelog
+
+## 0.3.0
+
+### Security
+
+- **Admin chat now requires authentication and permissions.** All `/admin-ai-chat/*` routes require the new `UseAiAdminAssistant` permission (SuperAdmins have it). Previously they were reachable without authentication, giving anyone access to write-capable admin tools.
+- **Admin tools require the matching Vendure permission** in the active channel (mirroring the Admin API). Tools the administrator cannot use are hidden from the model.
+- **Admin chat sessions are private to their owner** (list, read, continue, delete). Previously any session could be read or deleted by id, and listing without a token returned every administrator's sessions.
+- **`triggerEmbedAll` requires `UpdateCatalog` or `UpdateProduct`.** Previously it was public.
+- **Shop conversations are scoped to their owner.** The React hook used `useId()`, which is identical for every visitor, so all shoppers shared one cached conversation. Conversation ids are now random per visitor, and the server keys the cache by customer or session.
+- **Coupon codes are no longer revealed** by `getAvailablePromotions` unless `exposeCouponCodes: true`, and promotions are limited to the shopper's channel (previously every channel's codes were returned).
+- Client-supplied history can no longer inject `system` messages; history and message length are capped. `currentPage` is validated before it reaches the admin system prompt. The system prompt tells the model to treat tool output as data.
+
+### Changed
+
+- **Product search uses the store's configured search engine** through the Shop API (DefaultSearchPlugin, Elasticsearch, Typesense, Meilisearch, …) instead of a private deep import of DefaultSearchPlugin with an unscoped raw-SQL fallback. Channel, language, currency, enabled and deleted rules now always apply.
+- Semantic search results are hydrated through the Shop API, so hidden products are never suggested.
+- Price filters use tax-inclusive prices and are pushed down to engines that support `priceRangeWithTax`; prices are formatted in the channel currency instead of always `$`.
+- Shop endpoints use Vendure's `@Ctx()`/`@Allow()`, so cookie sessions and channel tokens work. The React widget has a new `channelToken` option.
+- Streaming stops when the shopper disconnects; cached history keeps tool summaries so follow-up actions (e.g. add to cart) still have variant ids.
+- New options: `chatModel`, `shopApiUrl`, `exposeCouponCodes`, `maxMessageLength`, `maxHistoryMessages`.
+- Peer dependency is now `@vendure/core >=3.1.0 <4.0.0` (CacheService requires 3.1).
+
+### Added
+
+- e2e test suite (`npm test`, Postgres + pgvector): storefront search, a custom search engine, security. Verified on Vendure 3.5.4 and 3.8.0.

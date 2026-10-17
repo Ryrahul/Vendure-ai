@@ -80,17 +80,16 @@ export class AiChatHistoryService {
         return repo.findOne({ where: { sessionId } }) ?? null;
     }
 
+    /** Lists one administrator's sessions. The owner filter is mandatory. */
     async listSessions(opts: {
-        administratorId?: number;
+        administratorId: number;
         take?: number;
         skip?: number;
     }): Promise<{ items: AiChatSession[]; totalItems: number }> {
         const repo = this.connection.rawConnection.getRepository(AiChatSession);
         const qb = repo.createQueryBuilder('s').orderBy('s.lastMessageAt', 'DESC');
 
-        if (opts.administratorId) {
-            qb.andWhere('s.administratorId = :adminId', { adminId: opts.administratorId });
-        }
+        qb.andWhere('s.administratorId = :adminId', { adminId: opts.administratorId });
 
         const totalItems = await qb.getCount();
         const items = await qb

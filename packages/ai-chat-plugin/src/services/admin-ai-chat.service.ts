@@ -20,6 +20,7 @@ import { ProductEmbeddingService } from './product-embedding.service';
 import { CollectionEmbeddingService } from './collection-embedding.service';
 import { ChatResultMapper } from './chat-result-mapper';
 import { AdminProductTools } from './admin-tools/admin-product-tools';
+import { restrictAdminTools } from './admin-tool-permissions';
 import { AdminOrderTools } from './admin-tools/admin-order-tools';
 import { AdminCustomerTools } from './admin-tools/admin-customer-tools';
 import { AdminCollectionTools } from './admin-tools/admin-collection-tools';
@@ -52,7 +53,6 @@ export class AdminAiChatService implements OnModuleInit {
     private openai: ReturnType<typeof createOpenAI>;
     private azure: ReturnType<typeof createAzure> | null = null;
     private azureDeploymentName: string = '';
-    private fulltextSearchService: any;
     private assetUrlPrefix: string = '';
 
     private mapper!: ChatResultMapper;
@@ -115,15 +115,6 @@ export class AdminAiChatService implements OnModuleInit {
     }
 
     async onModuleInit() {
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const mod = require('@vendure/core/dist/plugin/default-search-plugin/fulltext-search.service');
-            this.fulltextSearchService = this.moduleRef.get(mod.FulltextSearchService, { strict: false });
-            this.logger.log('FulltextSearchService resolved for admin chat');
-        } catch {
-            this.logger.warn('FulltextSearchService not available for admin chat');
-        }
-
         if (this.options.assetBaseUrl) {
             this.assetUrlPrefix = this.options.assetBaseUrl.endsWith('/') ? this.options.assetBaseUrl : this.options.assetBaseUrl + '/';
         } else {
@@ -136,7 +127,7 @@ export class AdminAiChatService implements OnModuleInit {
         }
 
         this.mapper = new ChatResultMapper(this.connection, this.assetUrlPrefix);
-        this.productTools = new AdminProductTools(this.connection, this.mapper, this.fulltextSearchService, this.embeddingService, this.productEmbeddingService, this.collectionEmbeddingService, this.productService, this.productVariantService, this.productOptionGroupService, this.productOptionService, this.taxCategoryService);
+        this.productTools = new AdminProductTools(this.connection, this.mapper, undefined, this.embeddingService, this.productEmbeddingService, this.collectionEmbeddingService, this.productService, this.productVariantService, this.productOptionGroupService, this.productOptionService, this.taxCategoryService);
         this.orderTools = new AdminOrderTools(this.connection, this.mapper);
         this.customerTools = new AdminCustomerTools(this.connection, this.customerService);
         this.collectionTools = new AdminCollectionTools(this.connection, this.collectionService);
@@ -315,8 +306,9 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
         currentPage?: string,
     ): Promise<AdminChatResult> {
         let systemPrompt = ADMIN_SYSTEM_PROMPT;
-        if (currentPage) {
-            systemPrompt += `\n\n## Current context\nThe admin user is currently viewing: ${currentPage}`;
+        const page = sanitizeDashboardPath(currentPage);
+        if (page) {
+            systemPrompt += `\n\n## Current context\nThe admin user is currently viewing the dashboard page: ${page}`;
         }
 
         const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -325,11 +317,12 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             { role: 'user', content: userMessage },
         ];
 
-        const tools = this.buildTools(ctx);
+        // Only offer tools the administrator is permitted to use in the active channel.
+        const tools = restrictAdminTools(ctx, this.buildTools(ctx));
 
         // Try OpenAI first, fall back to Azure if available
         try {
-            return await this.runChat(this.openai('gpt-4o-mini'), messages, tools);
+            return await this.runChat(this.openai(this.options.chatModel ?? 'gpt-4o-mini'), messages, tools);
         } catch (primaryError) {
             this.logger.error(`Primary OpenAI failed: ${primaryError}`);
             if (this.azure) {
@@ -408,4 +401,16 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             },
         };
     }
+}
+
+/**
+ * `currentPage` comes from the client and is placed in the system prompt, so only accept
+ * something that looks like a dashboard route.
+ */
+function sanitizeDashboardPath(path: string | undefined): string | undefined {
+    if (!path) {
+        return undefined;
+    }
+    const trimmed = path.trim().slice(0, 200);
+    return /^\/[A-Za-z0-9/_\-.$?=&%]*$/.test(trimmed) ? trimmed : undefined;
 }

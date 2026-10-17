@@ -4,7 +4,8 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 
 ## Features
 
-- **LLM Chat** — GPT-4o-mini powered shopping assistant via Vercel AI SDK
+- **LLM Chat** — shopping assistant via Vercel AI SDK (`gpt-4o-mini` by default, configurable)
+- **Uses your search engine** — product search goes through your store's Shop API `search` query, so it works with DefaultSearchPlugin, Elasticsearch, Typesense, Meilisearch or any search plugin, and respects channel, language, currency and visibility
 - **14 Built-in Tools** — search, vector search, collections, price filter, add-to-cart, cart view/adjust, order history/tracking, checkout (addresses, shipping)
 - **Streaming** — Real-time streaming responses via `POST /ai-assistant/stream` (compatible with `useChat()` from `@ai-sdk/react`)
 - **Non-streaming** — JSON response via `POST /ai-assistant/chat`
@@ -15,7 +16,7 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 
 ## Requirements
 
-- Vendure `>=3.0.0`
+- Vendure `>=3.1.0 <4` (tested on 3.5.4 and 3.8.0)
 - PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) extension
 - OpenAI API key
 
@@ -98,6 +99,22 @@ See the [`@rahul_vendure/ai-chat-react` README](https://www.npmjs.com/package/@r
 | `openaiApiKey` | `string` | Yes | — | Your OpenAI API key |
 | `embeddingModel` | `string` | No | `'text-embedding-3-small'` | OpenAI embedding model to use |
 | `assetBaseUrl` | `string` | No | Auto-detected | Base URL for product images (e.g. `https://my-vendure.com/assets/`) |
+| `chatModel` | `string` | No | `'gpt-4o-mini'` | Chat model for shop and admin conversations |
+| `shopApiUrl` | `string` | No | `http://127.0.0.1:<port>/<shopApiPath>` | This server's Shop API, used for engine-agnostic search. Set it if the server can't reach itself on that address |
+| `exposeCouponCodes` | `boolean` | No | `false` | Whether the shop assistant may reveal promotion coupon codes |
+| `maxMessageLength` | `number` | No | `2000` | Max characters per shopper message (longer → HTTP 400) |
+| `maxHistoryMessages` | `number` | No | `20` | Max previous messages sent to the model per turn |
+| `enableConversationCache` | `boolean` | No | `true` | Cache shop conversations server-side (scoped to the customer or session) |
+| `azureOpenai` | `object` | No | — | Azure OpenAI fallback for chat |
+
+## Search
+
+Vendure has no engine-agnostic search service — each search plugin replaces the Shop API `search` resolver. The assistant therefore runs `search`, `products` and `collections` through your own Shop API (anonymously, in the shopper's channel, language and currency):
+
+- **Any engine works**: DefaultSearchPlugin, Elasticsearch, Typesense, Meilisearch, or a custom one.
+- **Optional engine features are detected at runtime**: if your engine supports `priceRangeWithTax` (e.g. Elasticsearch), price filters run in the engine; otherwise a bounded in-memory filter is used. Stock status is shown when the engine exposes `inStock`.
+- **Semantic (pgvector) results are hydrated through the Shop API too**, so a product that is disabled, deleted, not in the shopper's channel, or hidden by another plugin is never suggested.
+- Prices are what the customer pays (tax included), formatted in the channel currency.
 
 ## API Endpoints
 
@@ -189,7 +206,16 @@ The plugin adds three entities to your database:
 
 ## Admin Dashboard AI Chat
 
-The plugin also includes a built-in admin chat endpoint at `POST /admin-ai-chat/chat` with admin-specific tools:
+The plugin also includes a built-in admin chat endpoint at `POST /admin-ai-chat/chat`.
+
+**Security**
+
+- Every `/admin-ai-chat/*` route requires the custom **`UseAiAdminAssistant`** permission (SuperAdmins have it; grant it to other roles explicitly). Authentication is Vendure's own (Bearer token or session cookie, `vendure-token` for the channel).
+- Each admin tool requires the same permission as the equivalent Admin API operation in the active channel (e.g. `createAdministrator` needs `CreateAdministrator`). Tools the administrator may not use are not offered to the model at all.
+- Chat sessions are private: administrators can only list, read, continue or delete their own.
+- `triggerEmbedAll` requires `UpdateCatalog` or `UpdateProduct`.
+
+Some of the admin tools:
 
 | Tool | Description |
 |------|-------------|

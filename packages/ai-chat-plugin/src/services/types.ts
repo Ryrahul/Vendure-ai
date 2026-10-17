@@ -3,9 +3,14 @@ export interface AiChatProduct {
     id: string;
     name: string;
     slug: string;
+    /** Price in the smallest currency unit (tax included when available). */
     price: number;
+    /** ISO currency code of `price`. */
+    currencyCode?: string;
     image: string | null;
     variantId: string;
+    /** Only set when the search engine reports stock. */
+    inStock?: boolean;
 }
 
 /** Structured collection returned in chat responses */
@@ -103,6 +108,8 @@ export interface AiPromotion {
     name: string;
     description: string;
     couponCode?: string;
+    /** True when the promotion needs a coupon code (the code itself may be withheld). */
+    requiresCouponCode?: boolean;
     startsAt?: string;
     endsAt?: string;
     perCustomerUsageLimit?: number;

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import type { UseVendureChatOptions, ChatProduct, ChatCollection, ChatActiveOrder, ExtractedData } from '../types';
@@ -23,7 +23,7 @@ export interface UseVendureChatReturn {
     collections: ChatCollection[];
     /** Active order from the latest assistant response */
     activeOrder: ChatActiveOrder | undefined;
-    /** The conversation ID for this chat session (stable across re-renders) */
+    /** The conversation ID (random per visitor, created on the first message; empty before that) */
     conversationId: string;
 }
 
@@ -36,26 +36,29 @@ export interface UseVendureChatReturn {
  * requiring the full message array from the frontend each time.
  */
 export function useVendureChat(options: UseVendureChatOptions): UseVendureChatReturn {
-    const { vendureUrl, authToken, chatEndpoint } = options;
+    const { vendureUrl, authToken, chatEndpoint, channelToken } = options;
 
-    // Use React's useId() for a deterministic, SSR-safe ID.
-    // This avoids Next.js 16's strict prerendering checks that reject
-    // Math.random() and crypto.randomUUID() in client components.
-    const reactId = useId();
-    const conversationId = reactId;
+    // The conversation id must be unique per visitor: the server caches history under it.
+    // It is created lazily on the first request (an event handler, not render), which keeps
+    // it random while staying compatible with Next.js prerendering rules that reject
+    // Math.random() / crypto.randomUUID() during render. Never use useId() here — it is
+    // identical for every visitor rendering the same component tree.
+    const conversationIdRef = useRef<string | null>(null);
+    const getConversationId = () => (conversationIdRef.current ??= createConversationId());
 
     const transport = useMemo(
         () =>
             new DefaultChatTransport({
                 api: chatEndpoint ?? `${vendureUrl.replace(/\/$/, '')}/ai-assistant/stream`,
-                headers: authToken
-                    ? () => ({ Authorization: `Bearer ${authToken}` })
-                    : undefined,
+                headers: () => ({
+                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                    ...(channelToken ? { 'vendure-token': channelToken } : {}),
+                }),
                 // Send the conversationId with every request so the server
                 // can look up history from its cache instead of receiving it.
-                body: { conversationId },
+                body: () => ({ conversationId: getConversationId() }),
             }),
-        [vendureUrl, authToken, chatEndpoint, conversationId],
+        [vendureUrl, authToken, chatEndpoint, channelToken],
     );
 
     const { messages, sendMessage: rawSendMessage, status } = useChat({
@@ -84,6 +87,20 @@ export function useVendureChat(options: UseVendureChatOptions): UseVendureChatRe
         products: latestData.products,
         collections: latestData.collections,
         activeOrder: latestData.activeOrder,
-        conversationId,
+        conversationId: conversationIdRef.current ?? '',
     };
+}
+
+function createConversationId(): string {
+    const cryptoApi = (globalThis as { crypto?: Crypto }).crypto;
+    if (cryptoApi?.randomUUID) {
+        return cryptoApi.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    if (cryptoApi?.getRandomValues) {
+        cryptoApi.getRandomValues(bytes);
+    } else {
+        for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }

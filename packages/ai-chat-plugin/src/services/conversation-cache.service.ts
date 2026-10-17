@@ -30,16 +30,21 @@ export class ConversationCacheService implements OnModuleInit {
         this.logger.log('ConversationCacheService initialized');
     }
 
-    private cacheKey(conversationId: string): string {
-        return `ai-chat:conversation:${conversationId}`;
+    /**
+     * The key is namespaced by owner (customer, session or anonymous), so a conversation
+     * can only ever be read or extended by whoever created it — even if another client
+     * sends the same conversationId.
+     */
+    private cacheKey(ownerKey: string, conversationId: string): string {
+        return `ai-chat:conversation:${ownerKey}:${conversationId}`;
     }
 
     /**
      * Retrieve the cached conversation history for a given conversationId.
      * Returns undefined if the conversation has expired or doesn't exist.
      */
-    async getHistory(conversationId: string): Promise<CachedConversation | undefined> {
-        return this.cacheService.get<CachedConversation>(this.cacheKey(conversationId));
+    async getHistory(ownerKey: string, conversationId: string): Promise<CachedConversation | undefined> {
+        return this.cacheService.get<CachedConversation>(this.cacheKey(ownerKey, conversationId));
     }
 
     /**
@@ -48,12 +53,14 @@ export class ConversationCacheService implements OnModuleInit {
      * created implicitly.
      */
     async appendMessages(
+        ownerKey: string,
         conversationId: string,
         userMessage: string,
         assistantResponse: string,
         customerId?: string | number,
+        maxMessages = 40,
     ): Promise<void> {
-        const existing = await this.getHistory(conversationId);
+        const existing = await this.getHistory(ownerKey, conversationId);
         const messages = existing?.messages ?? [];
 
         messages.push(
@@ -61,9 +68,12 @@ export class ConversationCacheService implements OnModuleInit {
             { role: 'assistant', content: assistantResponse },
         );
 
+        // Bound the stored history so a long chat can't grow without limit.
+        messages.splice(0, Math.max(0, messages.length - maxMessages));
+
         const now = Date.now();
         await this.cacheService.set<CachedConversation>(
-            this.cacheKey(conversationId),
+            this.cacheKey(ownerKey, conversationId),
             {
                 messages,
                 customerId: customerId ?? existing?.customerId,
@@ -84,8 +94,8 @@ export class ConversationCacheService implements OnModuleInit {
     /**
      * Delete a specific conversation from cache.
      */
-    async deleteConversation(conversationId: string): Promise<void> {
-        await this.cacheService.delete(this.cacheKey(conversationId));
+    async deleteConversation(ownerKey: string, conversationId: string): Promise<void> {
+        await this.cacheService.delete(this.cacheKey(ownerKey, conversationId));
         this.logger.debug(`Conversation ${conversationId} deleted from cache`);
     }
 

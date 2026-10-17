@@ -26,6 +26,7 @@ export function VendureAiChat({
     vendureUrl,
     authToken,
     chatEndpoint,
+    channelToken,
     position = 'bottom-right',
     title = 'Shopping Assistant',
     placeholder = 'Ask about products, collections, prices...',
@@ -53,6 +54,7 @@ export function VendureAiChat({
         vendureUrl,
         authToken,
         chatEndpoint,
+        channelToken,
     });
 
     // Auto-scroll on new messages

@@ -9,6 +9,7 @@ import { ProductEmbeddingService } from './services/product-embedding.service';
 import { VariantEmbeddingService } from './services/variant-embedding.service';
 import { CollectionEmbeddingService } from './services/collection-embedding.service';
 import { AiChatService } from './services/ai-chat.service';
+import { StorefrontApiService } from './services/storefront-api.service';
 import { ConversationCacheService } from './services/conversation-cache.service';
 import { ProductEmbeddingHandler } from './handlers/product-embedding-handler';
 import { VariantEmbeddingHandler } from './handlers/variant-embedding-handler';
@@ -19,7 +20,7 @@ import { AiAssistantController } from './controllers/ai-assistant.controller';
 import { AdminChatController } from './controllers/admin-chat.controller';
 import { AdminAiChatService } from './services/admin-ai-chat.service';
 import { AiChatHistoryService } from './services/ai-chat-history.service';
-import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from './constants';
+import { AI_ASSISTANT_OPTIONS, aiAdminAssistantPermission, type AiAssistantPluginOptions } from './constants';
 import { embedAllSchemaExtension } from './api/schema-extensions';
 
 export type { AiAssistantPluginOptions } from './constants';
@@ -43,6 +44,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         ProductEmbeddingService,
         VariantEmbeddingService,
         CollectionEmbeddingService,
+        StorefrontApiService,
         AiChatService,
         AdminAiChatService,
         AiChatHistoryService,
@@ -52,7 +54,11 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         CollectionEmbeddingHandler,
         EmbedAllJobService,
     ],
-    compatibility: '^3.0.0',
+    configuration: config => {
+        config.authOptions.customPermissions.push(aiAdminAssistantPermission);
+        return config;
+    },
+    compatibility: '^3.1.0',
 })
 export class AiAssistantPlugin implements OnApplicationBootstrap {
     static options: AiAssistantPluginOptions;

@@ -1,9 +1,27 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Query, Req, Logger } from '@nestjs/common';
-import { Request } from 'express';
-import { RequestContextService, SessionService, AdministratorService } from '@vendure/core';
+import {
+    Body,
+    Controller,
+    Delete,
+    ForbiddenException,
+    Get,
+    Inject,
+    Logger,
+    NotFoundException,
+    Param,
+    Post,
+    Query,
+} from '@nestjs/common';
+import { AdministratorService, Allow, Ctx, ID, RequestContext } from '@vendure/core';
+import { randomUUID } from 'crypto';
+
+import {
+    AI_ASSISTANT_OPTIONS,
+    aiAdminAssistantPermission,
+    sanitizeHistory,
+    type AiAssistantPluginOptions,
+} from '../constants';
 import { AdminAiChatService, AdminChatResult } from '../services/admin-ai-chat.service';
 import { AiChatHistoryService } from '../services/ai-chat-history.service';
-import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions } from '../constants';
 
 export interface AdminChatRequest {
     message: string;
@@ -16,6 +34,16 @@ export interface AdminChatResponse extends AdminChatResult {
     sessionId?: string;
 }
 
+const MAX_ADMIN_MESSAGE_LENGTH = 8000;
+
+/**
+ * REST endpoints for the AI admin assistant.
+ *
+ * Every route requires the `UseAiAdminAssistant` permission, checked by Vendure's own
+ * AuthGuard (Bearer token or session cookie, `vendure-token` channel header). On top of
+ * that, each admin tool requires the permission of the equivalent Admin API operation in
+ * the active channel, and chat sessions are only visible to the administrator who owns them.
+ */
 @Controller('admin-ai-chat')
 export class AdminChatController {
     private readonly logger = new Logger(AdminChatController.name);
@@ -24,42 +52,21 @@ export class AdminChatController {
         @Inject(AI_ASSISTANT_OPTIONS) private options: AiAssistantPluginOptions,
         private adminAiChatService: AdminAiChatService,
         private chatHistoryService: AiChatHistoryService,
-        private requestContextService: RequestContextService,
-        private sessionService: SessionService,
         private administratorService: AdministratorService,
     ) {}
 
-    private async resolveAuth(req: Request) {
-        const authHeader = req.get('Authorization');
-        const tokenMatch = authHeader?.trim().match(/^bearer\s(.+)$/i);
-        const sessionToken = tokenMatch?.[1];
-
-        let session;
-        if (sessionToken) {
-            session = await this.sessionService.getSessionFromToken(sessionToken);
-        }
-
-        const ctx = await this.requestContextService.fromRequest(req, undefined, undefined, session);
-
-        let administratorId: number | null = null;
-        if (ctx.activeUserId) {
-            try {
-                const admins = await this.administratorService.findAll(ctx, { filter: { emailAddress: { contains: '' } } });
-                const admin = admins.items.find(a => (a as any).user?.id === ctx.activeUserId);
-                if (admin) administratorId = admin.id as number;
-            } catch { /* ignore */ }
-        }
-
-        return { ctx, administratorId };
-    }
-
     @Post('chat')
-    async chat(@Body() body: AdminChatRequest, @Req() req: Request): Promise<AdminChatResponse> {
-        const { ctx, administratorId } = await this.resolveAuth(req);
+    @Allow(aiAdminAssistantPermission.Permission)
+    async chat(@Ctx() ctx: RequestContext, @Body() body: AdminChatRequest): Promise<AdminChatResponse> {
+        const administratorId = await this.requireAdministratorId(ctx);
+        const message = typeof body.message === 'string' ? body.message.trim() : '';
+        if (message.length > MAX_ADMIN_MESSAGE_LENGTH) {
+            throw new ForbiddenException(`Message too long (max ${MAX_ADMIN_MESSAGE_LENGTH} characters)`);
+        }
 
-        const message = (body.message ?? '').trim();
-        const history = body.history ?? [];
-        const sessionId = body.sessionId || `admin-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        // A client-supplied sessionId is only honoured if it belongs to this administrator.
+        const existingSession = body.sessionId ? await this.findOwnSession(body.sessionId, administratorId) : undefined;
+        const sessionId = existingSession ? existingSession.sessionId : `admin-${randomUUID()}`;
 
         if (!message) {
             return {
@@ -70,30 +77,18 @@ export class AdminChatController {
             };
         }
 
-        // If sessionId was provided but no history, try to load from DB
-        let effectiveHistory = history;
-        if (body.sessionId && history.length === 0) {
-            try {
-                const existingSession = await this.chatHistoryService.getSession(body.sessionId);
-                if (existingSession) {
-                    effectiveHistory = existingSession.messages.map(m => ({
-                        role: m.role,
-                        content: m.content,
-                    }));
-                }
-            } catch (e) {
-                this.logger.warn(`Failed to load session history: ${e}`);
-            }
-        }
+        const maxHistory = this.options.maxHistoryMessages ?? 20;
+        const history = existingSession
+            ? sanitizeHistory(existingSession.messages, maxHistory)
+            : sanitizeHistory(body.history, maxHistory);
 
-        const result = await this.adminAiChatService.chat(ctx, message, effectiveHistory, body.currentPage);
+        const result = await this.adminAiChatService.chat(ctx, message, history, body.currentPage);
 
-        // Persist chat turn to DB
-        const model = this.options.azureOpenai ? this.options.azureOpenai.deploymentName : 'gpt-4o-mini';
+        const model = this.options.azureOpenai ? this.options.azureOpenai.deploymentName : (this.options.chatModel ?? 'gpt-4o-mini');
         try {
             await this.chatHistoryService.appendMessage({
                 sessionId,
-                administratorId,
+                administratorId: administratorId as number,
                 channelId: ctx.channelId as number,
                 model,
                 userMessage: message,
@@ -111,30 +106,49 @@ export class AdminChatController {
         return { ...result, sessionId };
     }
 
-    // ── Session management endpoints ──
-
     @Get('sessions')
-    async listSessions(
-        @Req() req: Request,
-        @Query('take') take?: string,
-        @Query('skip') skip?: string,
-    ) {
-        const { administratorId } = await this.resolveAuth(req);
+    @Allow(aiAdminAssistantPermission.Permission)
+    async listSessions(@Ctx() ctx: RequestContext, @Query('take') take?: string, @Query('skip') skip?: string) {
+        const administratorId = await this.requireAdministratorId(ctx);
         return this.chatHistoryService.listSessions({
-            administratorId: administratorId ?? undefined,
-            take: take ? parseInt(take, 10) : 50,
-            skip: skip ? parseInt(skip, 10) : 0,
+            administratorId: administratorId as number,
+            take: Math.min(Math.max(parseInt(take ?? '50', 10) || 50, 1), 100),
+            skip: Math.max(parseInt(skip ?? '0', 10) || 0, 0),
         });
     }
 
     @Get('sessions/:sessionId')
-    async getSession(@Param('sessionId') sessionId: string) {
-        return this.chatHistoryService.getSession(sessionId);
+    @Allow(aiAdminAssistantPermission.Permission)
+    async getSession(@Ctx() ctx: RequestContext, @Param('sessionId') sessionId: string) {
+        const administratorId = await this.requireAdministratorId(ctx);
+        const session = await this.findOwnSession(sessionId, administratorId);
+        if (!session) {
+            throw new NotFoundException();
+        }
+        return session;
     }
 
     @Delete('sessions/:sessionId')
-    async deleteSession(@Param('sessionId') sessionId: string) {
-        const deleted = await this.chatHistoryService.deleteSession(sessionId);
-        return { success: deleted };
+    @Allow(aiAdminAssistantPermission.Permission)
+    async deleteSession(@Ctx() ctx: RequestContext, @Param('sessionId') sessionId: string) {
+        const administratorId = await this.requireAdministratorId(ctx);
+        if (!(await this.findOwnSession(sessionId, administratorId))) {
+            throw new NotFoundException();
+        }
+        return { success: await this.chatHistoryService.deleteSession(sessionId) };
+    }
+
+    private async requireAdministratorId(ctx: RequestContext): Promise<ID> {
+        const admin = ctx.activeUserId ? await this.administratorService.findOneByUserId(ctx, ctx.activeUserId) : undefined;
+        if (!admin) {
+            throw new ForbiddenException('The AI admin assistant is only available to administrators');
+        }
+        return admin.id;
+    }
+
+    /** Returns the session only if it exists and belongs to the administrator (no existence oracle). */
+    private async findOwnSession(sessionId: string, administratorId: ID) {
+        const session = await this.chatHistoryService.getSession(sessionId);
+        return session && String(session.administratorId) === String(administratorId) ? session : undefined;
     }
 }
