@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { streamText, tool, stepCountIs, type ToolSet } from 'ai';
+import { toModelInput } from './prompt-utils';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAzure } from '@ai-sdk/azure';
 import { z } from 'zod';
@@ -413,9 +414,12 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
             const tool = this.buildTools(txCtx)[action.toolName] as any;
             return tool.execute(action.input, { toolCallId: `confirmed-${action.id}`, messages: [] });
         });
+        const summary = String(output?.summary ?? 'Done.');
+        // Tools report failures as text rather than throwing, so check the summary too.
+        const failed = !!output?.error || /^(error|could not|cannot|failed|unable|no \w+ (found|with))/i.test(summary.trim());
         return {
-            success: !output?.error,
-            summary: String(output?.summary ?? 'Done.'),
+            success: !failed,
+            summary,
             ...(output?.products?.length ? { products: output.products } : {}),
             ...(output?.collections?.length ? { collections: output.collections } : {}),
             ...(output?.orders?.length ? { orders: output.orders } : {}),
@@ -429,7 +433,7 @@ If the user asks to go to a specific entity (e.g. "go to product Laptop"), first
     ): Promise<AdminChatResult> {
         const result = streamText({
             model,
-            messages,
+            ...toModelInput(messages),
             tools,
             stopWhen: stepCountIs(5),
             temperature: 0.7,

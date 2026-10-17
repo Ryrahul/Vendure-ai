@@ -1,10 +1,11 @@
 {
   "name": "@rahul_vendure/ai-chat-dashboard",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "AI chat assistant widget for the Vendure admin dashboard \u2014 adds a floating chat panel to the React-based Vendure 3.x dashboard",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js"
@@ -15,7 +16,8 @@
     "dist",
     "src/dashboard",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",

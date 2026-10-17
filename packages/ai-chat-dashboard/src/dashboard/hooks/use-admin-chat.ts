@@ -1,20 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChatMessage, PendingConfirmation } from '../types';
+import { useAuthHeaders } from './use-auth-headers';
 
-function authHeaders(json = false): Record<string, string> {
-    const headers: Record<string, string> = json ? { 'Content-Type': 'application/json' } : {};
-    const sessionToken = localStorage.getItem('vendure-session-token');
-    const channelToken = localStorage.getItem('vendure-selected-channel-token');
-    if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-    if (channelToken) headers['vendure-token'] = channelToken;
-    return headers;
-}
 
 function generateSessionId(): string {
     return `admin-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 }
 
 export function useAdminChat() {
+    const getHeaders = useAuthHeaders();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -33,11 +27,7 @@ export function useAdminChat() {
     /** Load a previous session from the server. */
     const loadSession = useCallback(async (sid: string) => {
         try {
-            const sessionToken = localStorage.getItem('vendure-session-token');
-            const channelToken = localStorage.getItem('vendure-selected-channel-token');
-            const headers: Record<string, string> = {};
-            if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-            if (channelToken) headers['vendure-token'] = channelToken;
+            const headers = getHeaders();
 
             const res = await fetch(`/admin-ai-chat/sessions/${sid}`, { headers, credentials: 'include' });
             if (!res.ok) return;
@@ -58,7 +48,7 @@ export function useAdminChat() {
         } catch {
             // ignore
         }
-    }, []);
+    }, [getHeaders]);
 
     const sendMessage = useCallback(
         async (text: string) => {
@@ -73,11 +63,7 @@ export function useAdminChat() {
             setIsLoading(true);
 
             try {
-                const sessionToken = localStorage.getItem('vendure-session-token');
-                const channelToken = localStorage.getItem('vendure-selected-channel-token');
-                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-                if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-                if (channelToken) headers['vendure-token'] = channelToken;
+                const headers = getHeaders(true);
 
                 const res = await fetch('/admin-ai-chat/chat', {
                     method: 'POST',
@@ -134,7 +120,7 @@ export function useAdminChat() {
                 setIsLoading(false);
             }
         },
-        [isLoading, messages, sessionId],
+        [isLoading, messages, sessionId, getHeaders],
     );
 
     /**
@@ -160,7 +146,7 @@ export function useAdminChat() {
             try {
                 const res = await fetch(`/admin-ai-chat/${decision}`, {
                     method: 'POST',
-                    headers: authHeaders(true),
+                    headers: getHeaders(true),
                     credentials: 'include',
                     body: JSON.stringify({ confirmationId }),
                 });
@@ -176,7 +162,7 @@ export function useAdminChat() {
                 update({ status: 'failed', result: err instanceof Error ? err.message : 'Request failed' });
             }
         },
-        [],
+        [getHeaders],
     );
 
     return {

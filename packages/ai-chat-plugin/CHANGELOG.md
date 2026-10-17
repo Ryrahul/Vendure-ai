@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+### Fixed
+
+- A confirmed admin action that failed (tools report failures as text, e.g. "Error deleting product…") was reported as successful. `POST /admin-ai-chat/confirm` now returns `success: false` for those.
+- System prompts are passed through the AI SDK `system` option instead of as a `system` message (the SDK flags the latter as a prompt-injection risk).
+- `package.json` is now exported, so tools that `require('@rahul_vendure/ai-chat-plugin/package.json')` work.
+
 ## 0.3.0
 
 ### Security

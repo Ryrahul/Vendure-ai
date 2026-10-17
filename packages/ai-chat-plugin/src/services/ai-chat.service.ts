@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { streamText, tool, stepCountIs, type ToolSet } from 'ai';
+import { toModelInput } from './prompt-utils';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAzure } from '@ai-sdk/azure';
 import { z } from 'zod';
@@ -297,7 +298,7 @@ export class AiChatService implements OnModuleInit {
         return streamText({
             model: this.openai(this.options.chatModel ?? 'gpt-4o-mini'),
             abortSignal,
-            messages,
+            ...toModelInput(messages),
             tools,
             stopWhen: stepCountIs(12),
             temperature: 0.7,
@@ -357,7 +358,7 @@ export class AiChatService implements OnModuleInit {
 
         const result = streamText({
             model,
-            messages,
+            ...toModelInput(messages),
             tools,
             stopWhen: stepCountIs(12),
             temperature: 0.7,

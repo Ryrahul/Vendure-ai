@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuthHeaders } from './use-auth-headers';
 
 export interface SessionSummary {
     sessionId: string;
@@ -10,16 +11,9 @@ export interface SessionSummary {
     createdAt: string;
 }
 
-function getHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {};
-    const sessionToken = localStorage.getItem('vendure-session-token');
-    const channelToken = localStorage.getItem('vendure-selected-channel-token');
-    if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-    if (channelToken) headers['vendure-token'] = channelToken;
-    return headers;
-}
 
 export function useSessionList() {
+    const getHeaders = useAuthHeaders();
     const [sessions, setSessions] = useState<SessionSummary[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -48,7 +42,7 @@ export function useSessionList() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [getHeaders]);
 
     const deleteSession = useCallback(async (sessionId: string) => {
         try {
@@ -61,7 +55,7 @@ export function useSessionList() {
         } catch {
             // ignore
         }
-    }, []);
+    }, [getHeaders]);
 
     useEffect(() => { refresh(); }, [refresh]);
 

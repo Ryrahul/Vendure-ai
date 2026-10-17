@@ -48,7 +48,15 @@ export function ConfirmationCard({ confirmation, onConfirm, onCancel }: Confirma
             }}
         >
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <AlertTriangle style={{ width: 16, height: 16, color: accent, flexShrink: 0, marginTop: 1 }} />
+                {status === 'confirmed' ? (
+                    <Check style={{ width: 16, height: 16, color: 'var(--success, #16a34a)', flexShrink: 0, marginTop: 1 }} />
+                ) : status === 'cancelled' ? (
+                    <X style={{ width: 16, height: 16, color: 'var(--muted-foreground, #64748b)', flexShrink: 0, marginTop: 1 }} />
+                ) : (
+                    <AlertTriangle
+                        style={{ width: 16, height: 16, color: status === 'failed' ? 'var(--destructive, #dc2626)' : accent, flexShrink: 0, marginTop: 1 }}
+                    />
+                )}
                 <div style={{ fontSize: 13, color: 'var(--foreground, #0f172a)' }}>
                     <div style={{ fontWeight: 600 }}>
                         {status === 'confirmed' ? 'Done' : status === 'cancelled' ? 'Cancelled' : status === 'failed' ? 'Not done' : 'Confirm this action'}

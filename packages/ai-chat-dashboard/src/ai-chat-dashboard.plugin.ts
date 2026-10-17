@@ -22,7 +22,8 @@ import { PluginCommonModule, VendurePlugin } from '@vendure/core';
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
-    dashboard: './dashboard/index.tsx',
+    // Relative to the compiled dist/ai-chat-dashboard.plugin.js; the raw TSX ships in src/dashboard.
+    dashboard: '../src/dashboard/index.tsx',
     compatibility: '^3.0.0',
 })
 export class AiChatDashboardPlugin {}

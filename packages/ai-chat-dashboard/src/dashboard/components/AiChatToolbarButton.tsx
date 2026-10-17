@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useAuthHeaders } from '../hooks/use-auth-headers';
 import { SparklesIcon, XIcon, Maximize2Icon, ArrowUp, Bot } from 'lucide-react';
 import type { ChatMessage } from '../types';
 import { ChatMessageBubble } from './ChatMessageBubble';
@@ -31,6 +32,7 @@ function MiniLoadingDots() {
 }
 
 export function AiChatToolbarButton() {
+    const getHeaders = useAuthHeaders();
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -71,11 +73,7 @@ export function AiChatToolbarButton() {
             setIsLoading(true);
 
             try {
-                const sessionToken = localStorage.getItem('vendure-session-token');
-                const channelToken = localStorage.getItem('vendure-selected-channel-token');
-                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-                if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-                if (channelToken) headers['vendure-token'] = channelToken;
+                const headers = getHeaders(true);
 
                 const res = await fetch('/admin-ai-chat/chat', {
                     method: 'POST',
@@ -122,7 +120,7 @@ export function AiChatToolbarButton() {
                 setIsLoading(false);
             }
         },
-        [isLoading, messages, sessionId],
+        [isLoading, messages, sessionId, getHeaders],
     );
 
     const canSend = input.trim() && !isLoading;
