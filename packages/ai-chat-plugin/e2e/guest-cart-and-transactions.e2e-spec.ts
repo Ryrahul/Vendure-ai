@@ -72,6 +72,7 @@ describe('guest carts and write transactions', () => {
         it('a guest can see their cart', async () => {
             const result = await tools.getActiveOrder.execute({}, { toolCallId: 't', messages: [] });
             expect(result.activeOrder?.totalQuantity).toBe(2);
+            expect(result.activeOrder?.currencyCode).toBe('USD'); // lets widgets format in the store currency
             expect(result.summary).toMatch(/Cart has 2 item/);
         });
 

@@ -19,7 +19,7 @@ interface ChatMessageProps {
     renderCartSummary?: VendureAiChatProps['renderCartSummary'];
     renderOrder?: VendureAiChatProps['renderOrder'];
     renderPromotion?: VendureAiChatProps['renderPromotion'];
-    formatPrice: (price: number) => string;
+    formatPrice: (price: number, currencyCode?: string) => string;
     addingToCart: string | null;
     onAddToCartClick: (variantId: string, productName: string, quantity?: number) => void;
 }

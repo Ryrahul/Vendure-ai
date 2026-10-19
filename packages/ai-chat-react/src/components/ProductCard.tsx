@@ -6,7 +6,7 @@ import { cn } from '../utils/cn';
 interface ProductCardProps {
     product: ChatProduct;
     onNavigate?: (path: string) => void;
-    formatPrice: (price: number) => string;
+    formatPrice: (price: number, currencyCode?: string) => string;
     addingToCart: boolean;
     onAddToCart: () => void;
     className?: string;
@@ -51,7 +51,7 @@ export function ProductCard({ product, onNavigate, formatPrice, addingToCart, on
                     </p>
                 </a>
                 <p className="text-primary font-semibold text-sm">
-                    {formatPrice(product.price)}
+                    {formatPrice(product.price, product.currencyCode)}
                 </p>
             </div>
             {product.variantId && (

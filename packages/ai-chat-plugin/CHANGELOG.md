@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+
+- Carts (`activeOrder`) and orders returned to the frontend now include `currencyCode`, so widgets can show prices in the store currency.
+- README: tool counts and `searchProducts` description were out of date (search uses the configured engine since 0.3.0); variant embeddings are no longer mentioned as generated.
+
 ## 0.4.0
 
 > **Database:** adds a nullable `contentHash` column to `product_embedding` and `collection_embedding`. With `synchronize: false`, generate and run a migration (`npx vendure migrate`).

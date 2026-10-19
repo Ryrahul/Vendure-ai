@@ -42,7 +42,7 @@ export function VendureAiChat({
     renderOrder,
     renderPromotion,
     className,
-    formatPrice = defaultFormatPrice,
+    formatPrice = formatChatPrice,
 }: VendureAiChatProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [inputValue, setInputValue] = useState('');
@@ -288,6 +288,15 @@ export function VendureAiChat({
     }
 }
 
-function defaultFormatPrice(price: number): string {
-    return `$${(price / 100).toFixed(2)}`;
+/** Default price formatter: smallest currency unit → localized currency string (e.g. "NPR 99.00"). */
+export function formatChatPrice(price: number, currencyCode?: string): string {
+    const amount = price / 100;
+    if (!currencyCode) {
+        return amount.toFixed(2);
+    }
+    try {
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode }).format(amount);
+    } catch {
+        return `${amount.toFixed(2)} ${currencyCode}`;
+    }
 }

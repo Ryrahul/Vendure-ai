@@ -6,11 +6,13 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 
 - **LLM Chat** — shopping assistant via Vercel AI SDK (`gpt-4o-mini` by default, configurable)
 - **Uses your search engine** — product search goes through your store's Shop API `search` query, so it works with DefaultSearchPlugin, Elasticsearch, Typesense, Meilisearch or any search plugin, and respects channel, language, currency and visibility
-- **14 Built-in Tools** — search, vector search, collections, price filter, add-to-cart, cart view/adjust, order history/tracking, checkout (addresses, shipping)
+- **19 Shop Tools** — search, semantic search, collections, price filter, add-to-cart, cart view/adjust (guests too), order history/tracking, checkout (addresses, shipping, payment methods), promotions and coupons
+- **Admin assistant** — ~100 admin tools, each gated by the matching Vendure permission, with human confirmation for destructive actions
+- **Guard-rails** — write tools run in transactions, per-shopper/IP/admin rate limits and daily token budgets
 - **Streaming** — Real-time streaming responses via `POST /ai-assistant/stream` (compatible with `useChat()` from `@ai-sdk/react`)
 - **Non-streaming** — JSON response via `POST /ai-assistant/chat`
 - **Vector Search** — pgvector-powered semantic search over products and collections
-- **Auto-Embedding** — Automatic embedding generation on product/variant/collection create/update/delete
+- **Auto-Embedding** — Products and collections are re-embedded on change, batched, and only when their text actually changed
 - **Bulk Embedding** — Admin GraphQL mutation `triggerEmbedAll` to embed all existing catalog data
 - **Embedding Entities** — Registers TypeORM entities for vector storage (requires pgvector and a migration)
 
@@ -200,11 +202,11 @@ export const config: VendureConfig = {
 
 ## Tools
 
-The AI assistant has 19 built-in tools:
+The shop assistant has 19 built-in tools:
 
 | Tool | Description |
 |------|-------------|
-| `searchProducts` | Keyword search using Vendure's fulltext search index |
+| `searchProducts` | Keyword search through your store's configured search engine (Shop API `search`) |
 | `vectorSearch` | Semantic/intent-based search using pgvector embeddings |
 | `getCollections` | List product collections/categories |
 | `filterByPrice` | Filter products by price range |

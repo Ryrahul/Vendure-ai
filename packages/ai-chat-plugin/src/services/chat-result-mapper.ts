@@ -46,6 +46,7 @@ export class ChatResultMapper {
                 code: order.code,
                 state: order.state,
                 total: (order as any).totalWithTax ?? (order as any).total ?? 0,
+                currencyCode: (order as any).currencyCode,
                 orderPlacedAt: (order as any).orderPlacedAt ? new Date((order as any).orderPlacedAt).toISOString() : null,
                 lines,
                 fulfillments: ((order as any).fulfillments ?? []).map((f: any) => ({
@@ -76,6 +77,7 @@ export class ChatResultMapper {
             code: order.code,
             totalQuantity: (order as any).totalQuantity ?? lines.reduce((sum: number, l: AiCartLine) => sum + l.quantity, 0),
             totalWithTax: (order as any).totalWithTax ?? 0,
+            currencyCode: (order as any).currencyCode,
             lines,
         };
     }

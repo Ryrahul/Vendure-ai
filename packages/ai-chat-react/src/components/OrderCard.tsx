@@ -6,7 +6,7 @@ import { cn } from '../utils/cn';
 interface OrderCardProps {
     order: ChatOrder;
     onNavigate?: (path: string) => void;
-    formatPrice: (price: number) => string;
+    formatPrice: (price: number, currencyCode?: string) => string;
     className?: string;
 }
 
@@ -54,7 +54,7 @@ export function OrderCard({ order, onNavigate, formatPrice, className }: OrderCa
             {/* Meta row: date + total */}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
                 {placedDate && <span>{placedDate}</span>}
-                <span className="font-semibold text-foreground">{formatPrice(order.total)}</span>
+                <span className="font-semibold text-foreground">{formatPrice(order.total, order.currencyCode)}</span>
             </div>
 
             {/* Order lines with product images */}
@@ -100,7 +100,7 @@ export function OrderCard({ order, onNavigate, formatPrice, className }: OrderCa
                                     </p>
                                 </a>
                                 <p className="text-xs text-muted-foreground">
-                                    Qty: {line.quantity} &middot; {formatPrice(line.linePriceWithTax)}
+                                    Qty: {line.quantity} &middot; {formatPrice(line.linePriceWithTax, order.currencyCode)}
                                 </p>
                             </div>
                         </div>

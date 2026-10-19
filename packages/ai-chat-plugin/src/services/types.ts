@@ -44,6 +44,8 @@ export interface AiChatOrder {
     code: string;
     state: string;
     total: number;
+    /** ISO currency code of the order's prices. */
+    currencyCode?: string;
     orderPlacedAt: string | null;
     lines: AiChatOrderLine[];
     fulfillments: Array<{
@@ -68,6 +70,8 @@ export interface AiActiveOrder {
     code: string;
     totalQuantity: number;
     totalWithTax: number;
+    /** ISO currency code of the order's prices. */
+    currencyCode?: string;
     lines: AiCartLine[];
 }
 

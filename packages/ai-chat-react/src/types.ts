@@ -3,7 +3,10 @@ export interface ChatProduct {
     id: string;
     name: string;
     slug: string;
+    /** Price in the smallest currency unit (tax included). */
     price: number;
+    /** ISO currency code of `price` (plugin >= 0.3.0). */
+    currencyCode?: string;
     image: string | null;
     variantId: string;
 }
@@ -37,6 +40,8 @@ export interface ChatActiveOrder {
     code: string;
     totalQuantity: number;
     totalWithTax: number;
+    /** ISO currency code (plugin >= 0.4.1). */
+    currencyCode?: string;
     lines: ChatCartLine[];
 }
 
@@ -75,6 +80,8 @@ export interface ChatOrder {
     code: string;
     state: string;
     total: number;
+    /** ISO currency code (plugin >= 0.4.1). */
+    currencyCode?: string;
     orderPlacedAt: string | null;
     lines: ChatOrderLine[];
     fulfillments: Array<{
@@ -149,10 +156,10 @@ export interface VendureAiChatProps {
     className?: string;
 
     /**
-     * Format a price value (in smallest currency unit) for display.
-     * Default: (price) => `$${(price / 100).toFixed(2)}`
+     * Format a price (in the smallest currency unit) for display. Receives the store
+     * currency when known. Default: locale currency formatting, e.g. "NPR 99.00", "£11.88".
      */
-    formatPrice?: (price: number) => string;
+    formatPrice?: (price: number, currencyCode?: string) => string;
 }
 
 /** Options for the useVendureChat hook */

@@ -5,7 +5,7 @@ import { cn } from '../utils/cn';
 
 interface CartSummaryProps {
     order: ChatActiveOrder;
-    formatPrice: (price: number) => string;
+    formatPrice: (price: number, currencyCode?: string) => string;
     className?: string;
 }
 
@@ -18,7 +18,7 @@ export function CartSummary({ order, formatPrice, className }: CartSummaryProps)
                     Your Cart ({order.totalQuantity} item{order.totalQuantity !== 1 ? 's' : ''})
                 </span>
                 <span className="font-semibold text-foreground">
-                    {formatPrice(order.totalWithTax)}
+                    {formatPrice(order.totalWithTax, order.currencyCode)}
                 </span>
             </div>
             <div className="space-y-1.5">
@@ -31,7 +31,7 @@ export function CartSummary({ order, formatPrice, className }: CartSummaryProps)
                             <span className="truncate">{line.productName}</span>
                         </div>
                         <span className="shrink-0 text-xs text-muted-foreground ml-2">
-                            {formatPrice(line.linePriceWithTax)}
+                            {formatPrice(line.linePriceWithTax, order.currencyCode)}
                         </span>
                     </div>
                 ))}

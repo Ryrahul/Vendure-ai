@@ -208,7 +208,8 @@ function MyCustomChat() {
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `vendureUrl` | `string` | *required* | Vendure server URL |
-| `authToken` | `string` | — | Bearer token for authenticated features |
+| `authToken` | `string` | — | The shopper's Vendure Shop API session token — logged-in customers **and guests** (needed for cart and checkout) |
+| `channelToken` | `string` | — | Your storefront channel's token, sent as `vendure-token`. Required for any channel other than the default one, otherwise the assistant searches, prices and shops in the default channel |
 | `position` | `'bottom-right' \| 'bottom-left' \| 'inline'` | `'bottom-right'` | Chat position |
 | `title` | `string` | `'Shopping Assistant'` | Header title |
 | `placeholder` | `string` | `'Ask about products...'` | Input placeholder |
@@ -219,7 +220,7 @@ function MyCustomChat() {
 | `renderProduct` | `(product) => ReactNode` | — | Custom product renderer |
 | `renderCollection` | `(collection) => ReactNode` | — | Custom collection renderer |
 | `renderCartSummary` | `(order) => ReactNode` | — | Custom cart renderer |
-| `formatPrice` | `(price) => string` | `$X.XX` | Price formatter |
+| `formatPrice` | `(price, currencyCode?) => string` | `formatChatPrice` — localized, in the store currency (e.g. `NPR 99.00`, `£11.88`) | Price formatter. Prices are in the smallest currency unit; `currencyCode` comes from the plugin (`>= 0.4.1` for carts and orders) |
 | `className` | `string` | — | Additional CSS class |
 
 ### `useVendureChat()` Return
@@ -280,6 +281,9 @@ The component uses Tailwind utility classes that reference CSS variables followi
 You can customize the component's look by changing these CSS variables in your Tailwind config.
 
 ## Authentication
+
+> **Conversations are private.** Each visitor gets a random conversation id on their first message, and the server stores history per customer or session, so two shoppers never share a conversation (fixed in 0.2.0 — earlier versions shared one).
+
 
 The `authToken` prop is **optional**. Without it, the chat can search products, browse collections and filter by price.
 
@@ -553,7 +557,7 @@ import { useVendureChat } from '@rahul_vendure/ai-chat-react';
 import { ChatMessage, ProductCard, CollectionBadge, CartSummary } from '@rahul_vendure/ai-chat-react';
 
 // Utilities
-import { extractDataFromMessage, getMessageText, cn } from '@rahul_vendure/ai-chat-react';
+import { extractDataFromMessage, getMessageText, cn, formatChatPrice } from '@rahul_vendure/ai-chat-react';
 
 // Types
 import type { ChatProduct, ChatCollection, ChatActiveOrder, ExtractedData } from '@rahul_vendure/ai-chat-react';

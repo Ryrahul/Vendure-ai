@@ -1,6 +1,6 @@
 {
   "name": "@rahul_vendure/ai-chat-react",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Drop-in AI shopping assistant React component for Vendure stores \u2014 chat UI with product cards, cart actions, and order tracking",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -17,7 +17,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup && tailwindcss -i src/styles.css -o dist/styles.css --minify",

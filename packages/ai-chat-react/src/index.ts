@@ -1,5 +1,5 @@
 // Main component
-export { VendureAiChat } from './components/VendureAiChat';
+export { VendureAiChat, formatChatPrice } from './components/VendureAiChat';
 
 // Headless hook
 export { useVendureChat } from './hooks/use-vendure-chat';
