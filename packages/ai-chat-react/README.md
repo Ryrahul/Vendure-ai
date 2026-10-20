@@ -15,12 +15,16 @@ Ships a pre-compiled CSS file — just import and go. Works with any React frame
 - **Dark Mode** — Works with Tailwind's dark mode out of the box
 - **Framework Agnostic** — Works with Next.js, Remix, Vite, CRA, etc.
 - **Streaming** — Real-time response streaming via Vercel AI SDK
+- **Guest carts** — with the shopper's session token the assistant sees and changes the same cart as your storefront, for guests and customers alike
+- **Store currency** — prices show in the channel's currency (`NPR 99.00`, `£11.88`), multi-channel via `channelToken`
+- **Any model** — works with whatever the server runs: OpenAI, Azure OpenAI, Anthropic, self-hosted models…
 - **lucide-react Icons** — Clean, consistent icons throughout
 
 ## Requirements
 
 - React `>=18`
-- A Vendure server with [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) installed
+- `ai` 6 and `@ai-sdk/react` 3 (peer dependencies — the same major versions as the server's stream protocol)
+- A Vendure server with [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) — `>=0.5.0` recommended (it is required with Azure OpenAI)
 
 ## Installation
 
@@ -303,7 +307,9 @@ Pass the shopper's Vendure Shop API session token — **for guests too** (with p
 
 ### How it works
 
-When a customer logs in to your Vendure storefront, Vendure returns a session token. You store this token (typically in an HTTP-only cookie), then pass it to `<VendureAiChat>` as the `authToken` prop. The component sends it as an `Authorization: Bearer <token>` header with every chat request, and the backend resolves the customer session to enable personalized tools.
+When a customer logs in to your Vendure storefront — or a guest adds their first item — Vendure returns a session token. You store this token (typically in an HTTP-only cookie), then pass it to `<VendureAiChat>` as the `authToken` prop. The component sends it as an `Authorization: Bearer <token>` header with every chat request, and the backend resolves the session to enable cart and customer tools.
+
+Keep the prop current: when your storefront gets a new token (first add-to-cart, login, logout), re-render with it — e.g. `router.refresh()` in Next.js. Since 0.2.4 the next message uses the new token (earlier versions kept the first one, so the assistant could report an empty cart after the storefront had created one).
 
 ### Next.js App Router (recommended pattern)
 
@@ -591,6 +597,17 @@ export const config: VendureConfig = {
     },
 };
 ```
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| The chat shows your message but no reply | Install `ai@^6` and `@ai-sdk/react@^3` (not 7 / 4), update the server plugin to `>=0.5.0`, and allow your storefront origin in CORS |
+| The assistant says the cart is empty after adding an item | Pass the storefront's current session token as `authToken` (widget `>=0.2.4`) and refresh it after the first add-to-cart |
+| Prices show in `$` | Don't pass a `formatPrice` that hard-codes USD — the default `formatChatPrice` uses the store currency; custom formatters receive `(price, currencyCode)` |
+| Wrong channel's products or prices | Pass `channelToken` for non-default channels |
+| The chat button sits inline instead of floating | Import `@rahul_vendure/ai-chat-react/styles.css` |
+| Product images missing | Set `assetBaseUrl` in the server plugin |
 
 ## License
 

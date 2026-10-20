@@ -6,6 +6,10 @@
 
 - **A slow web search could hold up an answer for minutes.** Each search now has a 45-second limit (built-in and custom `webSearch` functions) and at most one retry; the assistant answers with the other results and says which search is missing.
 
+### Docs
+
+- README rewritten as a full reference: quick start, every option, provider recipes (Azure-only, self-hosted, Anthropic, custom embeddings and web search), shop and admin endpoints, how forecasts and inventory plans are calculated, upgrading and troubleshooting.
+
 ## 0.5.0
 
 > **Database:** adds the `ai_store_profile` table. With `synchronize: false`, generate and run a migration (`npx vendure migrate`).

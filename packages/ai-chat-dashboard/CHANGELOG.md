@@ -6,6 +6,10 @@
 
 - **Long answers no longer look stuck.** While the assistant works, the chat shows how long it has been and that research with web searches can take a minute, instead of only the dots.
 
+### Docs
+
+- README: toolbar quick chat, channel behaviour, every insight card, where **Embed all** lives, prompts to try.
+
 ## 0.4.0
 
 ### Added

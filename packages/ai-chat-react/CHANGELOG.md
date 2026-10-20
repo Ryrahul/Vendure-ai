@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+### Docs
+
+- README: requirements (`ai` 6 / `@ai-sdk/react` 3, plugin ≥ 0.5.0), keeping `authToken` current for guest carts, and a troubleshooting section. No code changes.
+
 ## 0.2.4
 
 ### Fixed

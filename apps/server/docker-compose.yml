@@ -6,7 +6,8 @@
 
 services:
     postgres_db:
-        image: postgres:16-alpine
+        # pgvector is required by @rahul_vendure/ai-chat-plugin
+        image: pgvector/pgvector:pg16
         volumes:
             - postgres_db_data:/var/lib/postgresql/data
         ports:
