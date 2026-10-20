@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Changed
+
+- **Long answers no longer look stuck.** While the assistant works, the chat shows how long it has been and that research with web searches can take a minute, instead of only the dots.
+
 ## 0.4.0
 
 ### Added

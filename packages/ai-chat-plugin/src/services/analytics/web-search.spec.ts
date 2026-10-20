@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { citedSources, cleanUrl, resolveWebSearch } from './web-search';
+import { citedSources, cleanUrl, resolveWebSearch, searchWithTimeout } from './web-search';
 
 describe('cleanUrl', () => {
     it("removes only OpenAI's tracking parameter", () => {
@@ -36,5 +36,17 @@ describe('resolveWebSearch', () => {
     it('is off when disabled or when no provider can search', () => {
         expect(resolveWebSearch({ openaiApiKey: 'k', enableWebResearch: false }, 'm')).toBeUndefined();
         expect(resolveWebSearch({ embedTexts: async () => [] }, 'm')).toBeUndefined();
+    });
+});
+
+describe('searchWithTimeout', () => {
+    it('gives up on a search that takes too long', async () => {
+        const never = () => new Promise<never>(() => {});
+        await expect(searchWithTimeout(never, 'q', {}, 50)).rejects.toThrow(/no results within/);
+    });
+
+    it('returns results that arrive in time', async () => {
+        const quick = async () => ({ summary: 'ok', sources: [] });
+        await expect(searchWithTimeout(quick, 'q', {}, 1000)).resolves.toEqual({ summary: 'ok', sources: [] });
     });
 });

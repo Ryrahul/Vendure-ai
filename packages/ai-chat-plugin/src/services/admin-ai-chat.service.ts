@@ -29,7 +29,7 @@ import { BusinessInsightsService } from './analytics/business-insights.service';
 import type { InsightCard } from './analytics/insight-cards';
 import { StoreProfileService } from './analytics/store-profile.service';
 import { fetchPublicPage } from './analytics/web-page-fetcher';
-import { citedSources, resolveWebSearch, type WebSearchFunction } from './analytics/web-search';
+import { citedSources, resolveWebSearch, searchWithTimeout, type WebSearchFunction } from './analytics/web-search';
 import { type ChatModels, DEFAULT_CHAT_MODEL, resolveChatModels, withFallback } from './model-provider';
 
 /** Send only a tool's text summary to the model; the full output (cards) stays for the UI. */
@@ -394,7 +394,7 @@ export class AdminAiChatService implements OnModuleInit {
                           inputSchema: z.object({ query: z.string().min(2).max(300) }),
                           execute: async a => {
                               try {
-                                  const found = await this.webSearch!(a.query, await this.storeProfile.location(ctx));
+                                  const found = await searchWithTimeout(this.webSearch!, a.query, await this.storeProfile.location(ctx));
                                   const sources = found.sources.slice(0, 10);
                                   return {
                                       summary:
@@ -403,7 +403,7 @@ export class AdminAiChatService implements OnModuleInit {
                                       sources,
                                   };
                               } catch (e: any) {
-                                  return { summary: `Web search failed: ${e?.message ?? 'unknown error'}` };
+                                  return { summary: `Web search for "${a.query}" failed: ${e?.message ?? 'unknown error'}. Continue with the other results and mention this one is missing.` };
                               }
                           },
                           toModelOutput: summaryOnly,

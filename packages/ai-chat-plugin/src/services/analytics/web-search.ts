@@ -28,6 +28,22 @@ export interface WebSearchLocation {
  */
 export type WebSearchFunction = (query: string, location: WebSearchLocation) => Promise<WebSearchResult>;
 
+/** Upper limit for one web search; the assistant carries on without it when exceeded. */
+export const WEB_SEARCH_TIMEOUT_MS = 45_000;
+
+/** Runs a search with the time limit, for built-in and custom search functions alike. */
+export async function searchWithTimeout(search: WebSearchFunction, query: string, location: WebSearchLocation, timeoutMs = WEB_SEARCH_TIMEOUT_MS) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no results within ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs);
+    });
+    try {
+        return await Promise.race([search(query, location), timeout]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 const RESEARCH_INSTRUCTIONS =
     'You are a web research assistant for an online store. Search the web for the query and report the relevant ' +
     'findings concisely: seller or store names, product names, prices with currency, and the page URL of each finding. ' +
@@ -60,6 +76,9 @@ function hostedWebSearch(model: LanguageModel, searchTool: (location: WebSearchL
             // Provider-defined tool types don't fit generateText's ToolSet generics in ai@6.
             tools: { web_search: searchTool(location) as any },
             toolChoice: { type: 'tool', toolName: 'web_search' },
+            // A stuck search must not hold up the whole answer (see WEB_SEARCH_TIMEOUT_MS).
+            abortSignal: AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
+            maxRetries: 1,
         });
         const sources = new Map<string, WebSearchSource>();
         for (const source of result.sources) {

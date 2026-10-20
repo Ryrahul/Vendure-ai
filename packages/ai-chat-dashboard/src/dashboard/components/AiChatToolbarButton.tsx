@@ -3,6 +3,7 @@ import { useAuthHeaders } from '../hooks/use-auth-headers';
 import { SparklesIcon, XIcon, Maximize2Icon, ArrowUp, Bot } from 'lucide-react';
 import type { ChatMessage } from '../types';
 import { ChatMessageBubble } from './ChatMessageBubble';
+import { LoadingStatus } from './LoadingStatus';
 
 function generateSessionId(): string {
     return `toolbar-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -26,6 +27,7 @@ function MiniLoadingDots() {
                 <span className="ac-dot" />
                 <span className="ac-dot" style={{ animationDelay: '0.15s' }} />
                 <span className="ac-dot" style={{ animationDelay: '0.3s' }} />
+                <LoadingStatus fontSize={11} />
             </div>
         </div>
     );

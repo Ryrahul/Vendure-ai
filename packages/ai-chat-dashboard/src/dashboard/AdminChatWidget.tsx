@@ -6,6 +6,7 @@ import { ChatEmptyState } from './components/ChatEmptyState';
 import { ChatMessageBubble } from './components/ChatMessageBubble';
 import { ChatInput } from './components/ChatInput';
 import { Bot } from 'lucide-react';
+import { LoadingStatus } from './components/LoadingStatus';
 
 function LoadingDots() {
     return (
@@ -25,6 +26,7 @@ function LoadingDots() {
                 <span className="ac-dot" />
                 <span className="ac-dot" style={{ animationDelay: '0.15s' }} />
                 <span className="ac-dot" style={{ animationDelay: '0.3s' }} />
+                <LoadingStatus fontSize={12} />
             </div>
         </div>
     );
