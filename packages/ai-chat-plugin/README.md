@@ -102,7 +102,8 @@ Administrators need the **`UseAiAdminAssistant`** permission (SuperAdmins have i
 |--------|------|---------|-------------|
 | `openaiApiKey` | `string` | — | OpenAI API key, used for chat, embeddings and web search unless other providers are configured. Required unless `chatModel`/`azureOpenai` **and** `embeddingModel`/`embedTexts` cover everything |
 | `chatModel` | `string \| LanguageModel` | `'gpt-4o-mini'` | OpenAI model name, or any AI SDK model instance (see [Model providers](#model-providers)). Must support tool calling |
-| `azureOpenai` | `{ apiKey, resourceName? \| baseURL?, deploymentName, apiVersion? }` | — | Azure OpenAI chat deployment. Without `openaiApiKey` it is the chat model; next to another chat model it is the fallback when that model's call fails |
+| `azureOpenai` | `{ apiKey, resourceName? \| baseURL?, deploymentName, apiVersion?, embeddingDeploymentName?, embedding? }` | — | Azure OpenAI. The chat deployment is the chat model without `openaiApiKey`, otherwise the fallback. `embeddingDeploymentName` runs embeddings on Azure too; `embedding: { apiKey?, resourceName? \| baseURL?, apiVersion? }` when that deployment is on another resource |
+| `openaiCompatible` | `{ baseURL, apiKey?, chatModel?, embeddingModel?, embeddingDimensions?, name?, headers? }` | — | A self-hosted or hosted OpenAI-compatible API (Ollama, vLLM, LM Studio, llama.cpp, DeepSeek, OpenRouter, Groq…) from plain settings |
 | `embeddingModel` | `string \| EmbeddingModel` | `'text-embedding-3-small'` | OpenAI embedding model name, or any AI SDK embedding model instance |
 | `embedTexts` | `(texts: string[]) => Promise<number[][]>` | — | Your own embedding function, used instead of `embeddingModel` |
 | `embeddingDimensions` | `number` | `1536` | Size of the vectors; must match the embedding model |
@@ -121,51 +122,64 @@ The server and worker check the model configuration when they start and stop wit
 
 ## Model providers
 
-Each part can be swapped independently:
+Everything below is plain settings — the provider SDKs for OpenAI, Azure and OpenAI-compatible APIs ship with the plugin, so there is nothing else to install or import.
 
 | | Default | Alternatives |
 |---|---|---|
-| **Chat** | `openaiApiKey` + `chatModel` name | `azureOpenai`; or `chatModel` as any AI SDK model instance |
-| **Embeddings** | `openaiApiKey` + `embeddingModel` name | `embeddingModel` as any AI SDK embedding model; or your own `embedTexts` — set `embeddingDimensions` to match |
+| **Chat** | `openaiApiKey` + `chatModel` name | `azureOpenai`; `openaiCompatible.chatModel`; or `chatModel` as any AI SDK model instance |
+| **Embeddings** | `openaiApiKey` + `embeddingModel` name | `azureOpenai.embeddingDeploymentName`; `openaiCompatible.embeddingModel`; an AI SDK embedding model instance; or your own `embedTexts` — set the size with `embeddingDimensions` |
 | **Web search** (admin) | OpenAI's built-in search with `openaiApiKey`; otherwise Azure's (`webSearchPreview`) with `azureOpenai` | your own `webSearch`; none for other providers unless you register one |
 
-Install the provider package you use (`@ai-sdk/azure`, `@ai-sdk/anthropic`, `@ai-sdk/openai-compatible`, …) in your project.
+When several are configured, chat uses: a `chatModel` instance → `openaiCompatible.chatModel` → `openaiApiKey` → `azureOpenai` (Azure is also the fallback next to another chat model). Embeddings use: `embedTexts` → an `embeddingModel` instance → `openaiCompatible.embeddingModel` → `azureOpenai.embeddingDeploymentName` → `openaiApiKey`.
 
-**Azure OpenAI only** (no OpenAI key):
+### OpenAI
 
 ```ts
-import { createAzure } from '@ai-sdk/azure';
+AiAssistantPlugin.init({
+    openaiApiKey: process.env.OPENAI_API_KEY!,
+    chatModel: 'gpt-4.1-mini',                  // optional, default 'gpt-4o-mini'
+    embeddingModel: 'text-embedding-3-small',   // optional (default); 'text-embedding-3-large' needs embeddingDimensions: 3072
+});
+```
 
-const azureEmbeddings = createAzure({ apiKey: process.env.AZURE_EMBEDDING_KEY!, resourceName: 'my-embedding-resource' });
+### Azure OpenAI only
 
+```ts
 AiAssistantPlugin.init({
     azureOpenai: {
         apiKey: process.env.AZURE_OPENAI_API_KEY!,
-        resourceName: 'my-resource', // or baseURL: 'https://my-resource.services.ai.azure.com/openai'
-        deploymentName: 'gpt-4.1',
+        resourceName: 'my-resource',            // or baseURL: 'https://my-resource.services.ai.azure.com/openai'
+        deploymentName: 'gpt-4.1',              // chat deployment
+        embeddingDeploymentName: 'text-embedding-3-small',
+        // Only if the embedding deployment is on another resource / key:
+        embedding: { apiKey: process.env.AZURE_EMBEDDING_KEY!, resourceName: 'my-embedding-resource' },
     },
-    embeddingModel: azureEmbeddings.textEmbeddingModel('text-embedding-3-small'), // the deployment name
 });
 ```
 
-Web search then uses the Azure deployment's built-in search. If your deployment doesn't support it, searches report an error and the assistant says research is unavailable.
+Web search uses the Azure deployment's built-in search. If your deployment doesn't support it, searches report an error and the assistant says research is unavailable (or register your own `webSearch`).
 
-**Self-hosted or OpenAI-compatible** (Ollama, vLLM, LM Studio, DeepSeek, OpenRouter…):
+### Self-hosted or OpenAI-compatible (Ollama, vLLM, LM Studio, DeepSeek, OpenRouter…)
 
 ```ts
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-
-const local = createOpenAICompatible({ name: 'ollama', baseURL: 'http://localhost:11434/v1' });
-
 AiAssistantPlugin.init({
-    chatModel: local('qwen3:14b'),
-    embeddingModel: local.textEmbeddingModel('nomic-embed-text'),
-    embeddingDimensions: 768,
-    webSearch: myWebSearch, // optional, see below
+    openaiCompatible: {
+        baseURL: 'http://localhost:11434/v1',   // Ollama; vLLM: http://host:8000/v1; DeepSeek: https://api.deepseek.com/v1
+        apiKey: process.env.LLM_API_KEY,        // hosted services only
+        chatModel: 'qwen3:14b',                 // must support tool calling
+        embeddingModel: 'nomic-embed-text',
+        embeddingDimensions: 768,
+        name: 'ollama',                         // optional, shown in chat history
+    },
+    webSearch: myWebSearch,                     // optional, see below
 });
 ```
 
-**Other hosted models** (any AI SDK provider):
+Mix and match: e.g. chat on DeepSeek (`openaiCompatible` without `embeddingModel`) with embeddings on OpenAI (`openaiApiKey`) — `openaiCompatible.chatModel` takes precedence for chat.
+
+### Any other AI SDK provider
+
+For Anthropic, Google, Mistral, Bedrock… install the provider package and pass the model:
 
 ```ts
 import { anthropic } from '@ai-sdk/anthropic';
@@ -176,7 +190,9 @@ AiAssistantPlugin.init({
 });
 ```
 
-**Your own embedding service:**
+`embeddingModel` accepts any AI SDK embedding model instance the same way.
+
+### Your own embedding service
 
 ```ts
 AiAssistantPlugin.init({
@@ -186,7 +202,9 @@ AiAssistantPlugin.init({
 });
 ```
 
-**Your own web search** — return the findings as text plus their sources; `location` is the store's saved or inferred location:
+### Your own web search
+
+Return the findings as text plus their sources; `location` is the store's saved or inferred location:
 
 ```ts
 AiAssistantPlugin.init({
@@ -356,6 +374,7 @@ Every tool that changes data (cart and checkout changes, admin writes) runs in a
 
 ## Upgrading
 
+- **To 0.6.x:** no database changes. New plain-settings options `azureOpenai.embeddingDeploymentName` / `azureOpenai.embedding` and `openaiCompatible`; existing configurations work unchanged.
 - **To 0.5.x:** adds the `ai_store_profile` table — run a migration if you don't use `synchronize`. `openaiApiKey` is now optional when other providers are configured, and the server stops at startup if no chat model or embedding source is configured (e.g. `openaiApiKey: process.env.OPENAI_API_KEY ?? ''` with the variable unset). Storefronts using `@rahul_vendure/ai-chat-react` should update to 0.2.4.
 - **To 0.4.x:** adds a `contentHash` column to the embedding tables (migration); run `triggerEmbedAll` once afterwards.
 
@@ -365,7 +384,7 @@ See the [CHANGELOG](./CHANGELOG.md) for details.
 
 | Symptom | Cause / fix |
 |---|---|
-| Server stops with "configure a chat model" or "embeddings need …" | Set `openaiApiKey`, or `azureOpenai`/`chatModel` and `embeddingModel`/`embedTexts` |
+| Server stops with "configure a chat model" or "embeddings need …" | Set `openaiApiKey`; or `azureOpenai` (+ `embeddingDeploymentName`); or `openaiCompatible` (`chatModel` + `embeddingModel`); or `chatModel`/`embeddingModel` instances / `embedTexts` |
 | "the embedding model returned N dimensions, but embeddingDimensions is M" | Set `embeddingDimensions` to the model's size, migrate, run `triggerEmbedAll` |
 | Semantic search finds nothing | Run `triggerEmbedAll` and make sure the worker is running |
 | Storefront chat shows no reply | Use `@rahul_vendure/ai-chat-react` ≥ 0.2.4 with `ai@^6` / `@ai-sdk/react@^3` and this plugin ≥ 0.5.0; allow your storefront origin in CORS |

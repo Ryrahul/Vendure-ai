@@ -54,7 +54,13 @@ cp apps/server/.env.example apps/server/.env          # database, superadmin, OP
 cp apps/storefront/.env.example apps/storefront/.env  # VENDURE_SHOP_API_URL=http://localhost:3000/shop-api
 ```
 
-The dev server uses `OPENAI_API_KEY` for chat, embeddings and web search, and `AZURE_OPENAI_*` as the chat model when there's no OpenAI key (or as the fallback). To try other providers (Azure embeddings, Ollama, Anthropic…), change `AiAssistantPlugin.init()` in `apps/server/src/vendure-config.ts` — see the plugin's [Model providers](./packages/ai-chat-plugin/README.md#model-providers).
+Pick a provider in `apps/server/.env` — no code changes needed:
+
+- **OpenAI:** `OPENAI_API_KEY` (chat, embeddings, web search).
+- **Azure only:** `AZURE_OPENAI_*`, including `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME` for embeddings.
+- **Local model (Ollama, vLLM, LM Studio…):** `LLM_BASE_URL`, `LLM_CHAT_MODEL`, `LLM_EMBEDDING_MODEL`, `LLM_EMBEDDING_DIMENSIONS` — e.g. `ollama pull qwen3:14b && ollama pull nomic-embed-text`, then `LLM_BASE_URL=http://localhost:11434/v1`.
+
+For other providers (Anthropic, Google…), pass a model instance in `apps/server/src/vendure-config.ts` — see the plugin's [Model providers](./packages/ai-chat-plugin/README.md#model-providers).
 
 ### 4. Run
 

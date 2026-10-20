@@ -95,14 +95,26 @@ export const config: VendureConfig = {
         DefaultJobQueuePlugin.init({ useDatabaseForBuffer: true }),
         DefaultCachePlugin.init({ cacheSize: 10_000 }),
         DefaultSearchPlugin.init({ bufferUpdates: false, indexStockStatus: true }),
+        // Configure providers through .env — see .env.example and the plugin README ("Model providers").
         AiAssistantPlugin.init({
-            openaiApiKey: process.env.OPENAI_API_KEY ?? '',
-            embeddingModel: 'text-embedding-3-small',
+            openaiApiKey: process.env.OPENAI_API_KEY || undefined,
             assetBaseUrl: IS_DEV ? undefined : normalizeAssetUrlPrefix(process.env.ASSET_URL_PREFIX),
             azureOpenai: process.env.AZURE_OPENAI_API_KEY ? {
                 apiKey: process.env.AZURE_OPENAI_API_KEY,
                 resourceName: process.env.AZURE_OPENAI_RESOURCE_NAME ?? '',
                 deploymentName: process.env.AZURE_OPENAI_DEPLOYMENT_NAME ?? 'gpt-4.1',
+                embeddingDeploymentName: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME || undefined,
+                embedding: process.env.AZURE_OPENAI_EMBEDDING_API_KEY || process.env.AZURE_OPENAI_EMBEDDING_RESOURCE_NAME ? {
+                    apiKey: process.env.AZURE_OPENAI_EMBEDDING_API_KEY || undefined,
+                    resourceName: process.env.AZURE_OPENAI_EMBEDDING_RESOURCE_NAME || undefined,
+                } : undefined,
+            } : undefined,
+            openaiCompatible: process.env.LLM_BASE_URL ? {
+                baseURL: process.env.LLM_BASE_URL,
+                apiKey: process.env.LLM_API_KEY || undefined,
+                chatModel: process.env.LLM_CHAT_MODEL || undefined,
+                embeddingModel: process.env.LLM_EMBEDDING_MODEL || undefined,
+                embeddingDimensions: process.env.LLM_EMBEDDING_DIMENSIONS ? Number(process.env.LLM_EMBEDDING_DIMENSIONS) : undefined,
             } : undefined,
         }),
         EmailPlugin.init({

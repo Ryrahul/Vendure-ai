@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- **Azure embeddings from plain settings:** `azureOpenai.embeddingDeploymentName`, plus `azureOpenai.embedding` (`apiKey`, `resourceName`/`baseURL`, `apiVersion`) when the embedding deployment is on another resource. No `@ai-sdk/azure` import needed in your config.
+- **Self-hosted and OpenAI-compatible APIs from plain settings:** `openaiCompatible: { baseURL, apiKey?, chatModel?, embeddingModel?, embeddingDimensions?, name?, headers? }` for Ollama, vLLM, LM Studio, llama.cpp, DeepSeek, OpenRouter, Groq and others (Chat Completions + Embeddings). Nothing extra to install.
+- Documented the order in which chat and embedding sources are chosen when several are configured.
+
+No database changes; existing configurations work unchanged.
+
 ## 0.5.1
 
 ### Fixed

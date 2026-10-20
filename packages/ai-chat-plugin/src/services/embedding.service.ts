@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { embedMany, type EmbeddingModel } from 'ai';
-import { AI_ASSISTANT_OPTIONS, EMBEDDING_DIMENSIONS } from '../constants';
+import { AI_ASSISTANT_OPTIONS } from '../constants';
 import type { AiAssistantPluginOptions } from '../constants';
-import { modelLabel, resolveEmbeddingModel } from './model-provider';
+import { resolveEmbedding } from './model-provider';
 
 /** @deprecated Configure embeddings through the plugin options instead. */
 export interface EmbeddingOptions {
@@ -29,14 +29,11 @@ export class EmbeddingService {
     constructor(
         @Inject(AI_ASSISTANT_OPTIONS) options: AiAssistantPluginOptions,
     ) {
+        const resolved = resolveEmbedding(options);
         this.customEmbed = options.embedTexts;
-        this.embeddingModel = resolveEmbeddingModel(options);
-        this.dimensions = options.embeddingDimensions ?? EMBEDDING_DIMENSIONS;
-        const name = this.embeddingModel ? modelLabel(this.embeddingModel) : 'custom';
-        // Kept as the bare name for the default OpenAI setup so existing hashes stay valid.
-        this.model = typeof options.embeddingModel === 'string' || options.embeddingModel === undefined
-            ? (options.embedTexts ? `custom:${this.dimensions}` : (options.embeddingModel ?? 'text-embedding-3-small'))
-            : `${name}:${this.dimensions}`;
+        this.embeddingModel = resolved.model;
+        this.dimensions = resolved.dimensions;
+        this.model = resolved.label;
     }
 
     /**

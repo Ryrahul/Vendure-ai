@@ -175,6 +175,52 @@ export interface AiAssistantPluginOptions {
         apiVersion?: string;
         /** Azure deployment name (e.g. "gpt-4.1") */
         deploymentName: string;
+        /**
+         * Azure deployment of an embedding model (e.g. "text-embedding-3-small"). When set,
+         * embeddings run on Azure too — no OpenAI key needed. Set `embeddingDimensions` if the
+         * model isn't 1536-dimensional.
+         */
+        embeddingDeploymentName?: string;
+        /**
+         * Where the embedding deployment lives, when that isn't the chat resource above.
+         * Unset fields fall back to the chat resource's.
+         */
+        embedding?: {
+            apiKey?: string;
+            resourceName?: string;
+            baseURL?: string;
+            apiVersion?: string;
+        };
+    };
+    /**
+     * A self-hosted or hosted OpenAI-compatible API — Ollama, vLLM, LM Studio, llama.cpp,
+     * DeepSeek, OpenRouter, Groq, Together… — configured with plain settings. Uses the
+     * Chat Completions and Embeddings endpoints under `baseURL`; nothing else to install.
+     *
+     * ```ts
+     * openaiCompatible: {
+     *     baseURL: 'http://localhost:11434/v1',
+     *     chatModel: 'qwen3:14b',
+     *     embeddingModel: 'nomic-embed-text',
+     *     embeddingDimensions: 768,
+     * }
+     * ```
+     */
+    openaiCompatible?: {
+        /** API base URL, usually ending in `/v1`. */
+        baseURL: string;
+        /** API key, for hosted services (DeepSeek, OpenRouter…); local servers usually need none. */
+        apiKey?: string;
+        /** Chat model name. Must support tool calling. */
+        chatModel?: string;
+        /** Embedding model name; without it embeddings come from another option (OpenAI, Azure, `embedTexts`). */
+        embeddingModel?: string;
+        /** Vector size of `embeddingModel` (e.g. 768 for nomic-embed-text). Same as the top-level `embeddingDimensions`. */
+        embeddingDimensions?: number;
+        /** Provider name shown in chat history and logs. @default 'openai-compatible' */
+        name?: string;
+        /** Extra HTTP headers, e.g. `{ 'HTTP-Referer': … }` for OpenRouter. */
+        headers?: Record<string, string>;
     };
 }
 
