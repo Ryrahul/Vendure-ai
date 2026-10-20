@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0
+
+> **Database:** adds the `ai_store_profile` table. With `synchronize: false`, generate and run a migration (`npx vendure migrate`).
+
+### Added
+
+- **Business insights in the admin chat.** New admin tools: `getSalesSummary`, `getSalesTrend`, `getTopSellingProducts`, `getCustomerLocations`, `forecastSales` (30-day forecast with a likely range and accuracy measured on the store's own history), `getInventoryPlan` (reorder status and quantities from sales rate, supplier lead time and safety stock), `getStoreProfile` / `updateStoreProfile`, `searchWeb` and `fetchWebPage` (SSRF-guarded) for competitor and pricing research. Each is gated by the matching permission. Results come back as structured `insights` (charts/tables in `@rahul_vendure/ai-chat-dashboard` 0.4.0), and only a text summary is sent to the model.
+- **Any model provider.** `chatModel` accepts any AI SDK model instance (Anthropic, Google, self-hosted OpenAI-compatible servers such as Ollama/vLLM, DeepSeek, OpenRouter…). Azure OpenAI can be the primary chat model (no OpenAI key needed); `azureOpenai` accepts `baseURL` and `apiVersion`.
+- **Any embeddings.** `embeddingModel` accepts any AI SDK embedding model; `embedTexts` takes your own function; `embeddingDimensions` sizes the vector columns.
+- **Pluggable web search:** `webSearch` option (Tavily, Brave, SerpAPI…); `enableWebResearch: false` turns web research off.
+
+### Changed
+
+- `openaiApiKey` is optional when other providers cover chat and embeddings.
+- The plugin now checks its configuration at startup: with no chat model or no embedding source, `AiAssistantPlugin.init()` throws instead of failing on the first chat. (A setup like `openaiApiKey: process.env.OPENAI_API_KEY ?? ''` with the variable unset now stops at startup.)
+- Embeddings use the AI SDK (`embedMany`) instead of the `openai` client, and fail with a clear message when the model's vector size doesn't match `embeddingDimensions`.
+- Chat history records the model name of non-OpenAI models as `provider:modelId`.
+
 ## 0.4.1
 
 ### Fixed

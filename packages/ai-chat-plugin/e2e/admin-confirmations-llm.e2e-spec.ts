@@ -11,7 +11,7 @@ import { createAiTestEnvironment, DEFAULT_CHANNEL_TOKEN, http, PORT, serverInitO
 const apiKey = process.env.OPENAI_API_KEY_E2E;
 
 describe.skipIf(!apiKey)('admin confirmations with the real model', () => {
-    const { server, adminClient } = createAiTestEnvironment({ openaiApiKey: apiKey ?? '' });
+    const { server, adminClient } = createAiTestEnvironment({ openaiApiKey: apiKey ?? 'skipped' });
     let token: string;
 
     beforeAll(async () => {

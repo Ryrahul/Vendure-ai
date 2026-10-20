@@ -4,10 +4,11 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 
 ## Features
 
-- **LLM Chat** — shopping assistant via Vercel AI SDK (`gpt-4o-mini` by default, configurable)
+- **LLM Chat** — shopping assistant via Vercel AI SDK: OpenAI (`gpt-4o-mini` by default), Azure OpenAI, or any AI SDK model — Anthropic, Google, or self-hosted OpenAI-compatible servers (Ollama, vLLM, LM Studio, DeepSeek, OpenRouter). See [Model providers](#model-providers)
 - **Uses your search engine** — product search goes through your store's Shop API `search` query, so it works with DefaultSearchPlugin, Elasticsearch, Typesense, Meilisearch or any search plugin, and respects channel, language, currency and visibility
 - **19 Shop Tools** — search, semantic search, collections, price filter, add-to-cart, cart view/adjust (guests too), order history/tracking, checkout (addresses, shipping, payment methods), promotions and coupons
 - **Admin assistant** — ~100 admin tools, each gated by the matching Vendure permission, with human confirmation for destructive actions
+- **Business insights in the admin chat** — sales summaries and trends, a 30-day sales forecast with a likely range and measured accuracy, an inventory reorder plan, customer locations, and competitor/pricing research on the web, shown as charts and tables in the chat. See [Business insights](#business-insights)
 - **Guard-rails** — write tools run in transactions, per-shopper/IP/admin rate limits and daily token budgets
 - **Streaming** — Real-time streaming responses via `POST /ai-assistant/stream` (compatible with `useChat()` from `@ai-sdk/react`)
 - **Non-streaming** — JSON response via `POST /ai-assistant/chat`
@@ -20,7 +21,7 @@ AI-powered shopping assistant plugin for [Vendure](https://www.vendure.io/) e-co
 
 - Vendure `>=3.1.0 <4` (tested on 3.5.4 and 3.8.0)
 - PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) extension
-- OpenAI API key
+- An OpenAI API key — or another chat model plus your own embeddings (see [Model providers](#model-providers))
 
 ## Installation
 
@@ -102,18 +103,76 @@ See the [`@rahul_vendure/ai-chat-react` README](https://www.npmjs.com/package/@r
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
-| `openaiApiKey` | `string` | Yes | — | Your OpenAI API key |
-| `embeddingModel` | `string` | No | `'text-embedding-3-small'` | OpenAI embedding model to use |
+| `openaiApiKey` | `string` | Yes, unless other providers cover chat and embeddings | — | Your OpenAI API key (chat, embeddings and web search) |
+| `chatModel` | `string \| LanguageModel` | No | `'gpt-4o-mini'` | OpenAI model name, or any AI SDK model instance — see [Model providers](#model-providers) |
+| `azureOpenai` | `object` | No | — | Azure OpenAI chat deployment: the chat model when there is no `openaiApiKey`, otherwise the fallback |
+| `embeddingModel` | `string \| EmbeddingModel` | No | `'text-embedding-3-small'` | OpenAI embedding model name, or any AI SDK embedding model instance |
+| `embedTexts` | `(texts) => Promise<number[][]>` | No | — | Your own embedding function, instead of `embeddingModel` |
+| `embeddingDimensions` | `number` | No | `1536` | Vector size; must match the embedding model |
+| `enableWebResearch` | `boolean` | No | `true` | Let the admin assistant search the web and read public pages |
+| `webSearch` | `(query, location) => Promise<{ summary, sources }>` | No | OpenAI web search | Your own web search (Tavily, Brave, SerpAPI, …) |
 | `assetBaseUrl` | `string` | No | Auto-detected | Base URL for product images (e.g. `https://my-vendure.com/assets/`) |
-| `chatModel` | `string` | No | `'gpt-4o-mini'` | Chat model for shop and admin conversations |
 | `shopApiUrl` | `string` | No | `http://127.0.0.1:<port>/<shopApiPath>` | This server's Shop API, used for engine-agnostic search. Set it if the server can't reach itself on that address |
 | `exposeCouponCodes` | `boolean` | No | `false` | Whether the shop assistant may reveal promotion coupon codes |
 | `maxMessageLength` | `number` | No | `2000` | Max characters per shopper message (longer → HTTP 400) |
 | `maxHistoryMessages` | `number` | No | `20` | Max previous messages sent to the model per turn |
 | `enableConversationCache` | `boolean` | No | `true` | Cache shop conversations server-side (scoped to the customer or session) |
-| `azureOpenai` | `object` | No | — | Azure OpenAI fallback for chat |
 | `limits` | `object` | No | see [Usage limits](#usage-limits) | Message rate limits and daily token budgets |
 | `adminToolsRequiringConfirmation` | `string[]` | No | deletes + staff/roles/channels/settings/payment changes | Admin tools that only run after the administrator presses Confirm |
+
+## Model providers
+
+Out of the box everything runs on OpenAI with `openaiApiKey`. Each part can be swapped:
+
+| | Default | Alternatives |
+|---|---|---|
+| Chat | `openaiApiKey` + `chatModel` name | `azureOpenai`, or `chatModel` as any AI SDK model instance (must support tool calling) |
+| Embeddings | `openaiApiKey` + `embeddingModel` name | `embeddingModel` as any AI SDK embedding model, or your own `embedTexts` function — set `embeddingDimensions` to match |
+| Web search (admin) | OpenAI built-in web search | your own `webSearch` function; none if neither is available |
+
+```ts
+import { createAzure } from '@ai-sdk/azure';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+
+// Self-hosted (Ollama, vLLM, LM Studio …) or any OpenAI-compatible API (DeepSeek, OpenRouter …)
+const local = createOpenAICompatible({ name: 'ollama', baseURL: 'http://localhost:11434/v1' });
+
+AiAssistantPlugin.init({
+    chatModel: local('qwen3:14b'),
+    embeddingModel: local.textEmbeddingModel('nomic-embed-text'),
+    embeddingDimensions: 768,
+    // or your own: embedTexts: async texts => myEmbeddingService.embed(texts),
+});
+
+// Azure only: chat on Azure, embeddings on an Azure embedding deployment
+const azure = createAzure({ apiKey: process.env.AZURE_KEY, resourceName: 'my-resource' });
+AiAssistantPlugin.init({
+    azureOpenai: { apiKey: process.env.AZURE_KEY!, resourceName: 'my-resource', deploymentName: 'gpt-4.1' },
+    embeddingModel: azure.textEmbeddingModel('text-embedding-3-small'),
+});
+```
+
+Install the provider package you use (`@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, …) in your project. The plugin checks at startup that a chat model and an embedding source are configured.
+
+**Changing the embedding model:** set `embeddingDimensions` to the new model's size. The `embedding` columns change size (with `synchronize: true`, or generate a migration), which clears the stored vectors; then run `triggerEmbedAll` ("Embed all" in the dashboard). Similarity thresholds are tuned for OpenAI's `text-embedding-3` models; other models may return more or fewer semantic matches.
+
+**Web search** for the admin assistant uses OpenAI's built-in search when `openaiApiKey` is set (billed by OpenAI per search). Azure and self-hosted models have no default; register your own:
+
+```ts
+AiAssistantPlugin.init({
+    // ...
+    webSearch: async (query, location) => {
+        // Call your search API (Tavily, Brave, SerpAPI, Bing, …); `location` comes from the store profile.
+        const results = await mySearchApi.search(`${query} ${location.city ?? ''} ${location.countryCode ?? ''}`.trim());
+        return {
+            summary: results.map(r => `${r.title} (${r.url}): ${r.snippet}`).join('\n'),
+            sources: results.map(r => ({ title: r.title, url: r.url })),
+        };
+    },
+});
+```
+
+Without any web search the assistant says research is unavailable rather than guessing.
 
 ## Search
 
@@ -228,11 +287,13 @@ The shop assistant has 19 built-in tools:
 
 ## Entities
 
-The plugin adds three entities to your database:
+The plugin adds these entities to your database:
 
 - `product_embedding` — Vector embeddings for products (`contentHash` column since 0.4.0)
 - `collection_embedding` — Vector embeddings for collections (`contentHash` column since 0.4.0)
 - `variant_embedding` — no longer written since 0.4.0 (it was never used for search); kept so existing databases don't need a destructive migration
+- `ai_chat_session` — admin chat history
+- `ai_store_profile` — per-channel store profile for the business-insight tools (since 0.5.0)
 
 ## Admin Dashboard AI Chat
 
@@ -257,6 +318,24 @@ Some of the admin tools:
 | `searchCustomers` | Search customers by name/email with order stats |
 | `getCollections` | List/search collections with product counts |
 
+### Business insights
+
+The admin assistant doubles as a business analyst. Ask things like *"How did sales go this month and what will the next 30 days look like?"*, *"What should I reorder?"* or *"Research competitor prices for my top products"*. The figures come from tools, never from the model, and the dashboard renders them as charts and tables under the reply.
+
+| Tool | What it does | Permission |
+|------|--------------|------------|
+| `getSalesSummary` | Revenue, orders, average order value, units and customers vs the previous period | `ReadOrder` |
+| `getSalesTrend` | Revenue and orders per day, week or month | `ReadOrder` |
+| `getTopSellingProducts` | Best sellers by revenue or units, with average selling price | `ReadOrder` |
+| `getCustomerLocations` | Orders and revenue by country, region and city (shipping addresses) | `ReadOrder` or `ReadCustomer` |
+| `forecastSales` | Daily revenue forecast (Holt-Winters with weekly seasonality, damped trend), an ~80% range for the period total, and its accuracy measured on the store's own recent history | `ReadOrder` |
+| `getInventoryPlan` | Per variant: stock, sales rate, days of stock left, stock-out date, reorder status and quantity (lead time + planning period + 95% safety stock) | `ReadOrder` |
+| `getStoreProfile` / `updateStoreProfile` | Store location, regions served, business description, known competitors and supplier lead time — the assistant asks for what it can't look up and saves it | `ReadSettings`/`ReadOrder` · `UpdateSettings` |
+| `searchWeb` | Web search localized to the store, with source links (see [Model providers](#model-providers)) | — |
+| `fetchWebPage` | Reads a public web page as text. Only http(s) on ports 80/443; private, loopback and cloud-metadata addresses are refused, also after redirects and DNS lookups | — |
+
+Sales figures count placed orders in the active channel (not cancelled; seller sub-orders excluded), in the channel's currency. Forecasts are statistical projections of past sales: they don't know about upcoming promotions, holidays or stock-outs, and the assistant says so. Forecasts need at least a few weeks of orders.
+
 To add the admin chat UI to your Vendure dashboard, install the companion package:
 
 ```bash
@@ -277,6 +356,10 @@ import {
     ProductEmbeddingService,
     VariantEmbeddingService,
     CollectionEmbeddingService,
+    SalesAnalyticsService,  // Sales queries used by the insight tools
+    BusinessInsightsService,// Forecasts, inventory plans, summaries
+    StoreProfileService,
+    forecastSeries,         // The forecasting function, for your own series
 } from '@rahul_vendure/ai-chat-plugin';
 ```
 

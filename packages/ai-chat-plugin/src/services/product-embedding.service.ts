@@ -9,7 +9,7 @@ export interface SimilarProductResult {
 
 /**
  * Persists and queries product embeddings using pgvector (raw SQL).
- * Table must have embedding vector(1536); migration creates it.
+ * The embedding column is vector(embeddingDimensions), 1536 by default.
  */
 @Injectable()
 export class ProductEmbeddingService {

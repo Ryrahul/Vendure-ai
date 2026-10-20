@@ -2,8 +2,6 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { streamText, tool, stepCountIs, type ToolSet } from 'ai';
 import { toModelInput } from './prompt-utils';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAzure } from '@ai-sdk/azure';
 import { z } from 'zod';
 import { ActiveOrderService, RequestContext, TransactionalConnection, OrderService, CustomerService, ConfigService } from '@vendure/core';
 import { AI_ASSISTANT_OPTIONS, type AiAssistantPluginOptions, MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS } from '../constants';
@@ -20,6 +18,7 @@ import { OrderTools } from './tools/order-tools';
 import { CheckoutTools } from './tools/checkout-tools';
 import { PromotionTools } from './tools/promotion-tools';
 import { SYSTEM_PROMPT } from './system-prompt';
+import { type ChatModels, resolveChatModels, withFallback } from './model-provider';
 import type {
     AiChatProduct,
     AiChatCollection,
@@ -62,9 +61,7 @@ export type {
 @Injectable()
 export class AiChatService implements OnModuleInit {
     private readonly logger = new Logger(AiChatService.name);
-    private openai: ReturnType<typeof createOpenAI>;
-    private azure: ReturnType<typeof createAzure> | null = null;
-    private azureDeploymentName: string = '';
+    private models: ChatModels;
     private assetUrlPrefix: string = '';
 
     private mapper!: ChatResultMapper;
@@ -87,14 +84,7 @@ export class AiChatService implements OnModuleInit {
         private storefrontApiService: StorefrontApiService,
         private activeOrderService: ActiveOrderService,
     ) {
-        this.openai = createOpenAI({ apiKey: options.openaiApiKey });
-        if (options.azureOpenai) {
-            this.azure = createAzure({
-                apiKey: options.azureOpenai.apiKey,
-                resourceName: options.azureOpenai.resourceName,
-            });
-            this.azureDeploymentName = options.azureOpenai.deploymentName;
-        }
+        this.models = resolveChatModels(options);
     }
 
     async onModuleInit() {
@@ -300,7 +290,7 @@ export class AiChatService implements OnModuleInit {
 
         // OpenAI is primary model
         return streamText({
-            model: this.openai(this.options.chatModel ?? 'gpt-4o-mini'),
+            model: this.models.primary,
             abortSignal,
             ...toModelInput(messages),
             tools,
@@ -327,22 +317,7 @@ export class AiChatService implements OnModuleInit {
         conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
         customerId?: string | number,
     ): Promise<ChatResult> {
-        // Try OpenAI first, fall back to Azure if available
-        try {
-            return await this.runShopChat(ctx, userMessage, conversationHistory, customerId, this.openai(this.options.chatModel ?? 'gpt-4o-mini'));
-        } catch (primaryError) {
-            this.logger.error(`Primary OpenAI failed: ${primaryError}`);
-            if (this.azure) {
-                this.logger.log('Falling back to Azure OpenAI for shop chat...');
-                try {
-                    return await this.runShopChat(ctx, userMessage, conversationHistory, customerId, this.azure(this.azureDeploymentName));
-                } catch (fallbackError) {
-                    this.logger.error(`Azure fallback also failed: ${fallbackError}`);
-                    throw fallbackError;
-                }
-            }
-            throw primaryError;
-        }
+        return withFallback(this.models, this.logger, model => this.runShopChat(ctx, userMessage, conversationHistory, customerId, model));
     }
 
     private async runShopChat(

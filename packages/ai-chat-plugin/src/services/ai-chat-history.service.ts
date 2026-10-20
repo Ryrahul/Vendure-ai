@@ -14,6 +14,7 @@ export interface AppendMessageInput {
     products?: any[];
     collections?: any[];
     orders?: any[];
+    insights?: any[];
 }
 
 @Injectable()
@@ -43,6 +44,7 @@ export class AiChatHistoryService {
             ...(input.products?.length ? { products: input.products } : {}),
             ...(input.collections?.length ? { collections: input.collections } : {}),
             ...(input.orders?.length ? { orders: input.orders } : {}),
+            ...(input.insights?.length ? { insights: input.insights } : {}),
         };
 
         if (!session) {

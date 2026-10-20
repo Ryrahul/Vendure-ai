@@ -84,5 +84,5 @@ export const SHOP_WRITE_TOOLS = new Set([
 
 /** Admin tools are writes unless they only read or navigate. */
 export function isAdminWriteTool(name: string): boolean {
-    return !/^(get|search|vector|navigate)/.test(name);
+    return !/^(get|search|vector|navigate|forecast|fetch)/.test(name);
 }

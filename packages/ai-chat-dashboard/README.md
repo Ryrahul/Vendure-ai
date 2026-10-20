@@ -10,6 +10,7 @@ AI chat assistant widget for the [Vendure](https://www.vendure.io/) admin dashbo
 - **Semantic Search** — "products for developers", "gaming gear" — uses pgvector embeddings
 - **Customer Lookup** — Search customers by name or email with order stats
 - **Collection Browser** — List and search product categories
+- **Business insights** — sales summaries, a 30-day forecast chart with its likely range and accuracy, sales trends, an inventory reorder table, top products, customer locations and cited web sources for competitor research, rendered under the assistant's reply
 - **Markdown Rendering** — AI responses rendered with `react-markdown` + GitHub-flavored tables
 - **Multi-turn Conversations** — Conversation history maintained across messages
 - **Confirm before destructive actions** — when the assistant wants to delete something or change staff, roles, channels, settings or payment methods, a Confirm / Cancel card appears; nothing runs until you press Confirm
@@ -18,7 +19,7 @@ AI chat assistant widget for the [Vendure](https://www.vendure.io/) admin dashbo
 ## Requirements
 
 - Vendure `>=3.0.0` with the React-based `@vendure/dashboard` (`>=3.5.0`)
-- [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) `>=0.3.0` — provides the backend AI service and REST endpoints
+- [`@rahul_vendure/ai-chat-plugin`](https://www.npmjs.com/package/@rahul_vendure/ai-chat-plugin) `>=0.5.0` for the business-insight cards (`>=0.3.0` for everything else) — provides the backend AI service and REST endpoints
 - Administrators need the `UseAiAdminAssistant` permission (SuperAdmins have it) plus the usual permission for each action
 - `DashboardPlugin` must be configured in your Vendure config
 
@@ -113,6 +114,9 @@ After setup, you'll see an **AI** section in the dashboard sidebar with an **AI 
 - **Order lookup** — "show orders by john" → order cards with status badges
 - **Customer search** — "find customers named rahul" → customer details with order stats
 - **Collection browser** — "list collections" → formatted table
+- **Sales & forecast** — "how did sales go, and what will the next 30 days look like?" → KPI tiles and a forecast chart (history, dashed forecast, shaded likely range)
+- **Inventory** — "what should I reorder?" → table with stock, sales per day, days left, stock-out date and order quantity
+- **Market research** — "research competitor prices for my top products" → the assistant asks for your location if needed, searches the web and lists its sources
 
 Product cards link to `/dashboard/products/{id}` and order cards link to `/dashboard/orders/{id}`.
 

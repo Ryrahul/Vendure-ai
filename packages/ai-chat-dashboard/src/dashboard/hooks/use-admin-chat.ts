@@ -43,6 +43,7 @@ export function useAdminChat() {
                     ...(m.products?.length ? { products: m.products } : {}),
                     ...(m.collections?.length ? { collections: m.collections } : {}),
                     ...(m.orders?.length ? { orders: m.orders } : {}),
+                    ...(m.insights?.length ? { insights: m.insights } : {}),
                 })),
             );
         } catch {
@@ -93,6 +94,7 @@ export function useAdminChat() {
                         products: data.products,
                         collections: data.collections,
                         orders: data.orders,
+                        insights: data.insights,
                         pendingConfirmations: (data.pendingConfirmations ?? []).map((c: PendingConfirmation) => ({
                             ...c,
                             status: 'pending',

@@ -98,7 +98,7 @@ export class AdminChatController {
 
         await this.chatLimits.recordUsage('admin', `admin:${administratorId}`, result.usage?.totalTokens);
 
-        const model = this.options.azureOpenai ? this.options.azureOpenai.deploymentName : (this.options.chatModel ?? 'gpt-4o-mini');
+        const model = this.adminAiChatService.modelLabel;
         try {
             await this.chatHistoryService.appendMessage({
                 sessionId,
@@ -112,6 +112,7 @@ export class AdminChatController {
                 products: result.products,
                 collections: result.collections,
                 orders: result.orders,
+                insights: result.insights,
             });
         } catch (e) {
             this.logger.error(`Failed to persist chat session: ${e}`);

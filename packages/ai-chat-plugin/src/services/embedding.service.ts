@@ -1,64 +1,72 @@
 import { Inject, Injectable } from '@nestjs/common';
-import OpenAI from 'openai';
-import { AI_ASSISTANT_OPTIONS } from '../constants';
+import { embedMany, type EmbeddingModel } from 'ai';
+import { AI_ASSISTANT_OPTIONS, EMBEDDING_DIMENSIONS } from '../constants';
 import type { AiAssistantPluginOptions } from '../constants';
+import { modelLabel, resolveEmbeddingModel } from './model-provider';
 
+/** @deprecated Configure embeddings through the plugin options instead. */
 export interface EmbeddingOptions {
     openaiApiKey: string;
     /** Model name, e.g. 'text-embedding-3-small' (default) or 'text-embedding-3-large' */
     model?: string;
 }
 
+/** Characters kept per text (text-embedding-3 accepts 8191 tokens; this stays well inside). */
+const MAX_TEXT_LENGTH = 8191;
+
 /**
- * Generates text embeddings using OpenAI's embedding API.
- * Used to embed product name + description for semantic search.
+ * Generates text embeddings for semantic search, with the configured embedding model
+ * (OpenAI by default, any AI SDK embedding model) or the `embedTexts` function.
  */
 @Injectable()
 export class EmbeddingService {
-    private client: OpenAI;
+    private embeddingModel: EmbeddingModel | null;
+    private customEmbed: ((texts: string[]) => Promise<number[][]>) | undefined;
+    readonly dimensions: number;
+    /** Identifies the model; part of each text's content hash, so changing it re-embeds everything. */
     readonly model: string;
 
     constructor(
         @Inject(AI_ASSISTANT_OPTIONS) options: AiAssistantPluginOptions,
     ) {
-        this.client = new OpenAI({ apiKey: options.openaiApiKey });
-        this.model = options.embeddingModel ?? 'text-embedding-3-small';
+        this.customEmbed = options.embedTexts;
+        this.embeddingModel = resolveEmbeddingModel(options);
+        this.dimensions = options.embeddingDimensions ?? EMBEDDING_DIMENSIONS;
+        const name = this.embeddingModel ? modelLabel(this.embeddingModel) : 'custom';
+        // Kept as the bare name for the default OpenAI setup so existing hashes stay valid.
+        this.model = typeof options.embeddingModel === 'string' || options.embeddingModel === undefined
+            ? (options.embedTexts ? `custom:${this.dimensions}` : (options.embeddingModel ?? 'text-embedding-3-small'))
+            : `${name}:${this.dimensions}`;
     }
 
     /**
-     * Generate embedding vector for the given text.
-     * @returns Array of numbers (e.g. 1536 dims for text-embedding-3-small)
-     */
-    /**
-     * Embeds many texts with as few API calls as possible (100 inputs per request).
-     * Results are in input order.
+     * Embeds many texts with as few API calls as possible. Results are in input order.
      */
     async embedMany(texts: string[]): Promise<number[][]> {
-        const results: number[][] = [];
-        for (let i = 0; i < texts.length; i += 100) {
-            const chunk = texts.slice(i, i + 100).map(t => t.trim().slice(0, 8191));
-            const response = await this.client.embeddings.create({ model: this.model, input: chunk });
-            const ordered = [...response.data].sort((a, b) => a.index - b.index);
-            if (ordered.length !== chunk.length) {
-                throw new Error('EmbeddingService.embedMany: unexpected number of embeddings in response');
-            }
-            results.push(...ordered.map(d => d.embedding));
+        if (!texts.length) return [];
+        const values = texts.map(t => t.trim().slice(0, MAX_TEXT_LENGTH));
+        const vectors = this.customEmbed
+            ? await this.customEmbed(values)
+            : (await embedMany({ model: this.embeddingModel!, values, maxParallelCalls: 2 })).embeddings;
+        if (!Array.isArray(vectors) || vectors.length !== values.length) {
+            throw new Error('EmbeddingService.embedMany: unexpected number of embeddings in response');
         }
-        return results;
+        for (const vector of vectors) {
+            if (!Array.isArray(vector) || vector.length !== this.dimensions) {
+                throw new Error(
+                    `EmbeddingService: the embedding model returned ${Array.isArray(vector) ? vector.length : 'no'} dimensions, ` +
+                        `but embeddingDimensions is ${this.dimensions}. Set embeddingDimensions to match the model.`,
+                );
+            }
+        }
+        return vectors;
     }
 
     async embed(text: string): Promise<number[]> {
         if (!text?.trim()) {
             throw new Error('EmbeddingService.embed: text is required');
         }
-        const response = await this.client.embeddings.create({
-            model: this.model,
-            input: text.trim().slice(0, 8191), // model limit
-        });
-        const embedding = response.data[0]?.embedding;
-        if (!embedding || !Array.isArray(embedding)) {
-            throw new Error('EmbeddingService.embed: no embedding in response');
-        }
+        const [embedding] = await this.embedMany([text]);
         return embedding;
     }
 }

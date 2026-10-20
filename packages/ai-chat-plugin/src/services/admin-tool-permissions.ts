@@ -120,6 +120,18 @@ export const ADMIN_TOOL_PERMISSIONS: Record<string, P[]> = {
     createStockLocation: ['CreateStockLocation'],
     updateStockLocation: ['UpdateStockLocation'],
     deleteStockLocation: ['DeleteStockLocation'],
+    // Business insights
+    getSalesSummary: ['ReadOrder'],
+    getSalesTrend: ['ReadOrder'],
+    getTopSellingProducts: ['ReadOrder'],
+    getCustomerLocations: ['ReadOrder', 'ReadCustomer'],
+    forecastSales: ['ReadOrder'],
+    getInventoryPlan: ['ReadOrder'],
+    getStoreProfile: ['ReadSettings', 'ReadOrder'],
+    updateStoreProfile: ['UpdateSettings', 'UpdateGlobalSettings'],
+    // Public web content only; available to anyone allowed to use the assistant
+    searchWeb: [],
+    fetchWebPage: [],
     // UI only: navigates the dashboard, touches no data
     navigateToPage: [],
 };

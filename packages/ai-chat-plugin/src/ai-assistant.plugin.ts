@@ -1,9 +1,14 @@
 import { OnApplicationBootstrap } from '@nestjs/common';
 import { EventBus, PluginCommonModule, VendurePlugin } from '@vendure/core';
+import { getMetadataArgsStorage } from 'typeorm';
 import { ProductEmbedding } from './entities/product-embedding.entity';
 import { VariantEmbedding } from './entities/variant-embedding.entity';
 import { CollectionEmbedding } from './entities/collection-embedding.entity';
 import { AiChatSession } from './entities/ai-chat-session.entity';
+import { AiStoreProfile } from './entities/ai-store-profile.entity';
+import { BusinessInsightsService } from './services/analytics/business-insights.service';
+import { SalesAnalyticsService } from './services/analytics/sales-analytics.service';
+import { StoreProfileService } from './services/analytics/store-profile.service';
 import { EmbeddingService } from './services/embedding.service';
 import { ProductEmbeddingService } from './services/product-embedding.service';
 import { VariantEmbeddingService } from './services/variant-embedding.service';
@@ -22,7 +27,8 @@ import { AdminAiChatService } from './services/admin-ai-chat.service';
 import { AdminConfirmationService } from './services/admin-confirmation.service';
 import { ChatLimitsService } from './services/chat-limits.service';
 import { AiChatHistoryService } from './services/ai-chat-history.service';
-import { AI_ASSISTANT_OPTIONS, aiAdminAssistantPermission, type AiAssistantPluginOptions } from './constants';
+import { AI_ASSISTANT_OPTIONS, aiAdminAssistantPermission, EMBEDDING_DIMENSIONS, type AiAssistantPluginOptions } from './constants';
+import { resolveChatModels, resolveEmbeddingModel } from './services/model-provider';
 import { embedAllSchemaExtension } from './api/schema-extensions';
 
 export type { AiAssistantPluginOptions } from './constants';
@@ -34,7 +40,7 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
 
 @VendurePlugin({
     imports: [PluginCommonModule],
-    entities: [ProductEmbedding, VariantEmbedding, CollectionEmbedding, AiChatSession],
+    entities: [ProductEmbedding, VariantEmbedding, CollectionEmbedding, AiChatSession, AiStoreProfile],
     adminApiExtensions: {
         schema: () => embedAllSchemaExtension,
         resolvers: [AiAssistantResolver],
@@ -51,6 +57,9 @@ const defaultOptions: Required<Pick<AiAssistantPluginOptions, 'embeddingModel' |
         AdminAiChatService,
         AdminConfirmationService,
         ChatLimitsService,
+        SalesAnalyticsService,
+        BusinessInsightsService,
+        StoreProfileService,
         AiChatHistoryService,
         ConversationCacheService,
         ProductEmbeddingHandler,
@@ -69,6 +78,10 @@ export class AiAssistantPlugin implements OnApplicationBootstrap {
 
     static init(options: AiAssistantPluginOptions): typeof AiAssistantPlugin {
         this.options = { ...defaultOptions, ...options };
+        // Fail at startup, not on the first chat, when no chat or embedding model is configured.
+        resolveChatModels(this.options);
+        resolveEmbeddingModel(this.options);
+        setEmbeddingDimensions(this.options.embeddingDimensions ?? EMBEDDING_DIMENSIONS);
         return AiAssistantPlugin;
     }
 
@@ -81,5 +94,22 @@ export class AiAssistantPlugin implements OnApplicationBootstrap {
     onApplicationBootstrap() {
         void this.productHandler;
         void this.collectionHandler;
+    }
+}
+
+/**
+ * Sizes the pgvector `embedding` columns to the configured model. The entity decorators
+ * run at import time with the default, so the column metadata is updated here, before
+ * Vendure builds the database schema.
+ */
+function setEmbeddingDimensions(dimensions: number) {
+    if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > 16000) {
+        throw new Error(`AiAssistantPlugin: embeddingDimensions must be an integer from 1 to 16000 (got ${dimensions})`);
+    }
+    const entities: Function[] = [ProductEmbedding, VariantEmbedding, CollectionEmbedding];
+    for (const column of getMetadataArgsStorage().columns) {
+        if (entities.includes(column.target as Function) && column.propertyName === 'embedding') {
+            column.options.length = dimensions;
+        }
     }
 }

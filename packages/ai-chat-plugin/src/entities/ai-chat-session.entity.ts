@@ -11,6 +11,8 @@ export interface AiChatMessageEntry {
     products?: any[];
     collections?: any[];
     orders?: any[];
+    /** Charts/tables/sources shown under the reply. */
+    insights?: any[];
 }
 
 @Entity('ai_chat_session')
