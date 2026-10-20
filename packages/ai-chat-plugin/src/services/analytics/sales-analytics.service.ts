@@ -237,6 +237,33 @@ export class SalesAnalyticsService {
     }
 
     /** WHERE clause for placed, non-cancelled, non-seller orders in the channel ($1). */
+    /** The most common shipping country, region and city of the last year's orders, if any. */
+    async mainShippingLocation(ctx: RequestContext): Promise<{ countryCode: string; region?: string; city?: string; orders: number } | undefined> {
+        const since = new Date(Date.now() - 365 * DAY);
+        const rows = await this.query(
+            ctx,
+            `SELECT o."shippingAddress"::json->>'countryCode' AS "countryCode",
+                    o."shippingAddress"::json->>'province' AS region,
+                    o."shippingAddress"::json->>'city' AS city,
+                    COUNT(*)::int AS orders
+             FROM "order" o
+             ${this.placedOrdersInChannel('o')}
+               AND o."orderPlacedAt" >= $2
+               AND o."shippingAddress" IS NOT NULL AND o."shippingAddress" LIKE '{%'
+             GROUP BY 1, 2, 3
+             ORDER BY orders DESC
+             LIMIT 50`,
+            [since],
+        );
+        const withCountry = rows.filter(r => r.countryCode);
+        if (!withCountry.length) return undefined;
+        const byCountry = new Map<string, number>();
+        for (const r of withCountry) byCountry.set(r.countryCode, (byCountry.get(r.countryCode) ?? 0) + r.orders);
+        const [countryCode, orders] = [...byCountry.entries()].sort((a, b) => b[1] - a[1])[0];
+        const top = withCountry.find(r => r.countryCode === countryCode);
+        return { countryCode: countryCode.toUpperCase(), region: top?.region || undefined, city: top?.city || undefined, orders };
+    }
+
     private placedOrdersInChannel(alias: string) {
         return `JOIN order_channels_channel occ ON occ."orderId" = ${alias}.id AND occ."channelId" = $1
              WHERE ${alias}."orderPlacedAt" IS NOT NULL

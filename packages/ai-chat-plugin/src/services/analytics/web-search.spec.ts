@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { citedSources, cleanUrl } from './web-search';
+import { citedSources, cleanUrl, resolveWebSearch } from './web-search';
 
 describe('cleanUrl', () => {
     it("removes only OpenAI's tracking parameter", () => {
@@ -20,5 +20,21 @@ describe('citedSources', () => {
 
     it('keeps everything when the text cites nothing by URL', () => {
         expect(citedSources('No links here', sources)).toEqual(sources);
+    });
+});
+
+describe('resolveWebSearch', () => {
+    const azureOpenai = { apiKey: 'k', resourceName: 'r', deploymentName: 'd' };
+    const custom = async () => ({ summary: '', sources: [] });
+
+    it('prefers the webSearch option, then OpenAI, then Azure', () => {
+        expect(resolveWebSearch({ webSearch: custom, openaiApiKey: 'k', azureOpenai }, 'm')).toBe(custom);
+        expect(resolveWebSearch({ openaiApiKey: 'k', azureOpenai }, 'm')).toBeTypeOf('function');
+        expect(resolveWebSearch({ azureOpenai }, 'm')).toBeTypeOf('function');
+    });
+
+    it('is off when disabled or when no provider can search', () => {
+        expect(resolveWebSearch({ openaiApiKey: 'k', enableWebResearch: false }, 'm')).toBeUndefined();
+        expect(resolveWebSearch({ embedTexts: async () => [] }, 'm')).toBeUndefined();
     });
 });

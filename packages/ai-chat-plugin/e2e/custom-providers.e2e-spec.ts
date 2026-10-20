@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AiAssistantPlugin } from '../src/ai-assistant.plugin';
 import { AdminAiChatService } from '../src/services/admin-ai-chat.service';
+import { resolveChatModels, resolveEmbeddingModel } from '../src/services/model-provider';
 import { EmbeddingService } from '../src/services/embedding.service';
 import { awaitRunningJobs, createAiTestEnvironment, DEFAULT_CHANNEL_TOKEN, http, PORT, serverInitOptions } from './utils/test-environment';
 
@@ -113,7 +114,9 @@ describe('custom model providers (no OpenAI key)', () => {
         const chat = await http('POST', '/admin-ai-chat/chat', { token, channelToken: DEFAULT_CHANNEL_TOKEN, body: { message: 'How are sales?' } });
         expect(chat.status).toBe(201);
         expect(chat.body.message).toBe('Answer from the custom model.');
-        expect(chat.body.insights?.[0]?.type).toBe('salesSummary'); // the tool ran
+        // The tool ran and its result went back to the custom model.
+        const secondCall = JSON.stringify(chatModel.doStreamCalls[chatModel.doStreamCalls.length - 1].prompt);
+        expect(secondCall).toMatch(/Last 30 days: revenue/);
         const session = await http('GET', `/admin-ai-chat/sessions/${chat.body.sessionId}`, { token, channelToken: DEFAULT_CHANNEL_TOKEN });
         expect(session.body.model).toBe('acme-llm:acme-1');
     });
@@ -131,12 +134,16 @@ describe('custom model providers (no OpenAI key)', () => {
 });
 
 describe('plugin options validation', () => {
-    it('fails at startup without any chat model', () => {
-        expect(() => AiAssistantPlugin.init({ embedTexts })).toThrow(/configure a chat model/);
+    it('loads the config without API keys (build tools do this), sizing the columns only', () => {
+        expect(() => AiAssistantPlugin.init({})).not.toThrow();
     });
 
-    it('fails at startup without any embedding source', () => {
-        expect(() => AiAssistantPlugin.init({ chatModel })).toThrow(/embeddings need/);
+    it('fails at server startup without any chat model', () => {
+        expect(() => resolveChatModels({ embedTexts })).toThrow(/configure a chat model/);
+    });
+
+    it('fails at server startup without any embedding source', () => {
+        expect(() => resolveEmbeddingModel({ chatModel })).toThrow(/embeddings need/);
     });
 
     it('rejects an invalid embeddingDimensions', () => {

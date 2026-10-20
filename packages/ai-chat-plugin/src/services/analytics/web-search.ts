@@ -1,5 +1,8 @@
+import { createAzure } from '@ai-sdk/azure';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText } from 'ai';
+import { generateText, type LanguageModel } from 'ai';
+
+import type { AiAssistantPluginOptions } from '../../constants';
 
 export interface WebSearchSource {
     title: string;
@@ -33,22 +36,29 @@ const RESEARCH_INSTRUCTIONS =
 /** Default search: one OpenAI Responses call with its built-in web search tool. */
 export function openAiWebSearch(apiKey: string, model: string): WebSearchFunction {
     const openai = createOpenAI({ apiKey });
+    return hostedWebSearch(openai.responses(model), location => openai.tools.webSearch({ searchContextSize: 'medium', ...userLocation(location) }));
+}
+
+/** Default search on Azure OpenAI: the deployment's built-in web search (Responses API). */
+export function azureWebSearch(config: NonNullable<AiAssistantPluginOptions['azureOpenai']>): WebSearchFunction {
+    const azure = createAzure({
+        apiKey: config.apiKey,
+        ...(config.baseURL ? { baseURL: config.baseURL } : { resourceName: config.resourceName }),
+        ...(config.apiVersion ? { apiVersion: config.apiVersion } : {}),
+    });
+    return hostedWebSearch(azure.responses(config.deploymentName), location =>
+        azure.tools.webSearchPreview({ searchContextSize: 'medium', ...userLocation(location) }),
+    );
+}
+
+function hostedWebSearch(model: LanguageModel, searchTool: (location: WebSearchLocation) => unknown): WebSearchFunction {
     return async (query, location) => {
-        const userLocation =
-            location.city || location.region || location.countryCode
-                ? {
-                      type: 'approximate' as const,
-                      ...(location.city ? { city: location.city } : {}),
-                      ...(location.region ? { region: location.region } : {}),
-                      ...(location.countryCode ? { country: location.countryCode } : {}),
-                  }
-                : undefined;
         const result = await generateText({
-            model: openai.responses(model),
+            model,
             system: RESEARCH_INSTRUCTIONS,
             prompt: query,
             // Provider-defined tool types don't fit generateText's ToolSet generics in ai@6.
-            tools: { web_search: openai.tools.webSearch({ searchContextSize: 'medium', ...(userLocation ? { userLocation } : {}) }) as any },
+            tools: { web_search: searchTool(location) as any },
             toolChoice: { type: 'tool', toolName: 'web_search' },
         });
         const sources = new Map<string, WebSearchSource>();
@@ -61,6 +71,30 @@ export function openAiWebSearch(apiKey: string, model: string): WebSearchFunctio
         const summary = result.text.replace(/\?utm_source=openai&/g, '?').replace(/[?&]utm_source=openai\b/g, '');
         return { summary, sources: citedSources(summary, [...sources.values()]) };
     };
+}
+
+function userLocation(location: WebSearchLocation) {
+    if (!location.city && !location.region && !location.countryCode) return {};
+    return {
+        userLocation: {
+            type: 'approximate' as const,
+            ...(location.city ? { city: location.city } : {}),
+            ...(location.region ? { region: location.region } : {}),
+            ...(location.countryCode ? { country: location.countryCode } : {}),
+        },
+    };
+}
+
+/**
+ * The web search to use: the plugin's `webSearch` option, else OpenAI's built-in search
+ * (with `openaiApiKey`), else Azure's (with `azureOpenai`); none when research is off.
+ */
+export function resolveWebSearch(options: AiAssistantPluginOptions, defaultChatModel: string): WebSearchFunction | undefined {
+    if (options.enableWebResearch === false) return undefined;
+    if (options.webSearch) return options.webSearch;
+    if (options.openaiApiKey) return openAiWebSearch(options.openaiApiKey, typeof options.chatModel === 'string' ? options.chatModel : defaultChatModel);
+    if (options.azureOpenai) return azureWebSearch(options.azureOpenai);
+    return undefined;
 }
 
 /** Removes the tracking parameter OpenAI adds to cited links. */

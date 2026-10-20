@@ -29,7 +29,7 @@ import { BusinessInsightsService } from './analytics/business-insights.service';
 import type { InsightCard } from './analytics/insight-cards';
 import { StoreProfileService } from './analytics/store-profile.service';
 import { fetchPublicPage } from './analytics/web-page-fetcher';
-import { citedSources, openAiWebSearch, type WebSearchFunction } from './analytics/web-search';
+import { citedSources, resolveWebSearch, type WebSearchFunction } from './analytics/web-search';
 import { type ChatModels, DEFAULT_CHAT_MODEL, resolveChatModels, withFallback } from './model-provider';
 
 /** Send only a tool's text summary to the model; the full output (cards) stays for the UI. */
@@ -146,9 +146,7 @@ export class AdminAiChatService implements OnModuleInit {
         private storeProfile: StoreProfileService,
     ) {
         this.models = resolveChatModels(options);
-        if (options.enableWebResearch !== false) {
-            this.webSearch = options.webSearch ?? (options.openaiApiKey ? openAiWebSearch(options.openaiApiKey, typeof options.chatModel === 'string' ? options.chatModel : DEFAULT_CHAT_MODEL) : undefined);
-        }
+        this.webSearch = resolveWebSearch(options, DEFAULT_CHAT_MODEL);
     }
 
     async onModuleInit() {
@@ -346,11 +344,12 @@ export class AdminAiChatService implements OnModuleInit {
                 toModelOutput: summaryOnly,
             }),
             getStoreProfile: tool({
-                description: 'The store profile used for forecasting and market research: location, regions served, business description, competitors, supplier lead time — and which of these are still unknown.',
+                description: 'The store profile used for forecasting and market research: location (saved, or inferred from where orders ship / the channel zone), regions served, business description, competitors, supplier lead time — and which are not saved yet.',
                 inputSchema: z.object({}),
                 execute: async () => {
                     const profile = await this.storeProfile.get(ctx);
                     const missing = this.storeProfile.missingFields(profile);
+                    const inferred = profile?.countryCode || profile?.city ? undefined : await this.storeProfile.inferLocation(ctx);
                     return {
                         summary:
                             `Store profile: ${JSON.stringify({
@@ -362,7 +361,11 @@ export class AdminAiChatService implements OnModuleInit {
                                 competitors: profile?.competitors ?? [],
                                 supplierLeadTimeDays: profile?.supplierLeadTimeDays ?? null,
                                 notes: profile?.notes ?? null,
-                            })}. ` + (missing.length ? `Unknown: ${missing.join('; ')}.` : 'Complete.'),
+                            })}. ` +
+                            (inferred
+                                ? `Location not saved; inferred (unconfirmed) as ${[inferred.city, inferred.region, inferred.countryCode].filter(Boolean).join(', ')} from ${inferred.source}. Web searches use it. `
+                                : '') +
+                            (missing.length ? `Not saved yet: ${missing.join('; ')}.` : 'Complete.'),
                     };
                 },
             }),
@@ -391,12 +394,7 @@ export class AdminAiChatService implements OnModuleInit {
                           inputSchema: z.object({ query: z.string().min(2).max(300) }),
                           execute: async a => {
                               try {
-                                  const profile = await this.storeProfile.get(ctx);
-                                  const found = await this.webSearch!(a.query, {
-                                      city: profile?.city ?? undefined,
-                                      region: profile?.region ?? undefined,
-                                      countryCode: profile?.countryCode ?? undefined,
-                                  });
+                                  const found = await this.webSearch!(a.query, await this.storeProfile.location(ctx));
                                   const sources = found.sources.slice(0, 10);
                                   return {
                                       summary:

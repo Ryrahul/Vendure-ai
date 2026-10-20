@@ -28,7 +28,6 @@ import { AdminConfirmationService } from './services/admin-confirmation.service'
 import { ChatLimitsService } from './services/chat-limits.service';
 import { AiChatHistoryService } from './services/ai-chat-history.service';
 import { AI_ASSISTANT_OPTIONS, aiAdminAssistantPermission, EMBEDDING_DIMENSIONS, type AiAssistantPluginOptions } from './constants';
-import { resolveChatModels, resolveEmbeddingModel } from './services/model-provider';
 import { embedAllSchemaExtension } from './api/schema-extensions';
 
 export type { AiAssistantPluginOptions } from './constants';
@@ -78,9 +77,9 @@ export class AiAssistantPlugin implements OnApplicationBootstrap {
 
     static init(options: AiAssistantPluginOptions): typeof AiAssistantPlugin {
         this.options = { ...defaultOptions, ...options };
-        // Fail at startup, not on the first chat, when no chat or embedding model is configured.
-        resolveChatModels(this.options);
-        resolveEmbeddingModel(this.options);
+        // Model configuration is checked when the server/worker starts (the chat and embedding
+        // services resolve their models then), not here: build tools such as the dashboard's
+        // Vite plugin load this config without API keys.
         setEmbeddingDimensions(this.options.embeddingDimensions ?? EMBEDDING_DIMENSIONS);
         return AiAssistantPlugin;
     }

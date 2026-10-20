@@ -9,14 +9,21 @@
 - **Business insights in the admin chat.** New admin tools: `getSalesSummary`, `getSalesTrend`, `getTopSellingProducts`, `getCustomerLocations`, `forecastSales` (30-day forecast with a likely range and accuracy measured on the store's own history), `getInventoryPlan` (reorder status and quantities from sales rate, supplier lead time and safety stock), `getStoreProfile` / `updateStoreProfile`, `searchWeb` and `fetchWebPage` (SSRF-guarded) for competitor and pricing research. Each is gated by the matching permission. Results come back as structured `insights` (charts/tables in `@rahul_vendure/ai-chat-dashboard` 0.4.0), and only a text summary is sent to the model.
 - **Any model provider.** `chatModel` accepts any AI SDK model instance (Anthropic, Google, self-hosted OpenAI-compatible servers such as Ollama/vLLM, DeepSeek, OpenRouter…). Azure OpenAI can be the primary chat model (no OpenAI key needed); `azureOpenai` accepts `baseURL` and `apiVersion`.
 - **Any embeddings.** `embeddingModel` accepts any AI SDK embedding model; `embedTexts` takes your own function; `embeddingDimensions` sizes the vector columns.
-- **Pluggable web search:** `webSearch` option (Tavily, Brave, SerpAPI…); `enableWebResearch: false` turns web research off.
+- **Web search on Azure too.** Without `openaiApiKey`, the admin assistant uses the Azure deployment's built-in web search; or plug in your own with the `webSearch` option (Tavily, Brave, SerpAPI…). `enableWebResearch: false` turns web research off.
+- **The assistant works things out instead of asking.** The store location is inferred from where orders ship (or the channel's tax/shipping zone) until one is saved; with no sales, research uses catalog products. Assumptions are stated in one line, never as a questionnaire.
 
 ### Changed
 
 - `openaiApiKey` is optional when other providers cover chat and embeddings.
-- The plugin now checks its configuration at startup: with no chat model or no embedding source, `AiAssistantPlugin.init()` throws instead of failing on the first chat. (A setup like `openaiApiKey: process.env.OPENAI_API_KEY ?? ''` with the variable unset now stops at startup.)
+- The server and worker now check the model configuration when they start: with no chat model or no embedding source they stop with a clear error instead of failing on the first chat. (A setup like `openaiApiKey: process.env.OPENAI_API_KEY ?? ''` with the variable unset now stops at startup.) Loading the config without keys — e.g. the dashboard's `vite build` — still works.
 - Embeddings use the AI SDK (`embedMany`) instead of the `openai` client, and fail with a clear message when the model's vector size doesn't match `embeddingDimensions`.
 - Chat history records the model name of non-OpenAI models as `provider:modelId`.
+
+### Fixed
+
+- **Replies vanished in storefronts with Azure OpenAI.** Azure adds provider metadata to stream chunks, which `useChat` clients on older `ai` 6.x reject — cancelling the stream silently. The shop stream no longer includes provider metadata.
+- **Admin product tools ignored the active channel.** Product search, details and semantic search showed products from every channel, with the first price found (often another channel's, in another currency) labelled in the current currency. They now show only the channel's products with its own prices, and say whether prices include tax.
+- Insight tools send no card when there is no data (no more empty "Top products" boxes in channels without sales).
 
 ## 0.4.1
 

@@ -37,7 +37,7 @@ export class BusinessInsightsService {
                 `Last ${days} days: revenue ${formatPrice(s.revenue, cur)} (${change(s.revenue, s.previous.revenue)} vs previous ${days} days), ` +
                 `${s.orders} orders (${change(s.orders, s.previous.orders)}), average order ${formatPrice(s.averageOrderValue, cur)}, ` +
                 `${s.unitsSold} units, ${s.customers} customers. Revenue is product sales incl. tax after discounts, excl. shipping.`,
-            insight: { type: 'salesSummary', ...s },
+            ...(s.orders || s.previous.orders ? { insight: { type: 'salesSummary' as const, ...s } } : {}),
         };
     }
 
@@ -59,7 +59,7 @@ export class BusinessInsightsService {
                 `${granularity}ly sales for the last ${days} days: ` +
                 points.map(p => `${p.label}: ${formatPrice(p.revenue, cur)} (${p.orders} orders)`).slice(-12).join('; ') +
                 (best ? `. Best ${granularity}: ${best.label}.` : ''),
-            insight: { type: 'salesTrend', currencyCode: cur, granularity, points },
+            ...(points.some(p => p.orders > 0) ? { insight: { type: 'salesTrend' as const, currencyCode: cur, granularity, points } } : {}),
         };
     }
 
@@ -198,8 +198,8 @@ export class BusinessInsightsService {
                           )
                           .join('; ') +
                   (truncated ? ' (based on the most recent 50,000 order lines)' : '')
-                : `No sales in the last ${days} days.`,
-            insight: { type: 'topProducts', currencyCode: cur, days, sortBy, items },
+                : `No sales in the last ${days} days. For pricing or market research, take products from the catalog instead (searchProducts).`,
+            ...(items.length ? { insight: { type: 'topProducts' as const, currencyCode: cur, days, sortBy, items } } : {}),
         };
     }
 
@@ -210,7 +210,7 @@ export class BusinessInsightsService {
             summary: geo.ordersWithAddress
                 ? `Where orders shipped in the last ${days} days (${geo.ordersWithAddress} orders with an address). Countries: ${fmt(geo.countries)}. Regions: ${fmt(geo.regions)}. Cities: ${fmt(geo.cities)}.`
                 : `No orders with a shipping address in the last ${days} days.`,
-            insight: { type: 'customerLocations', currencyCode: ctx.channel.defaultCurrencyCode, days, ...geo },
+            ...(geo.ordersWithAddress ? { insight: { type: 'customerLocations' as const, currencyCode: ctx.channel.defaultCurrencyCode, days, ...geo } } : {}),
         };
     }
 }

@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Inject, Post, Res, Logger } from '@nestjs/common';
+import { createUIMessageStreamResponse } from 'ai';
 import { Response } from 'express';
 import { Allow, Ctx, CustomerService, Permission, RequestContext } from '@vendure/core';
 import {
@@ -16,6 +17,7 @@ import {
 } from '../services/ai-chat.service';
 import { ConversationCacheService } from '../services/conversation-cache.service';
 import { ChatLimitsService } from '../services/chat-limits.service';
+import { withoutProviderMetadata } from '../services/ui-stream';
 import { AI_ASSISTANT_OPTIONS, sanitizeHistory, type AiAssistantPluginOptions } from '../constants';
 
 /** Client-generated conversation ids: opaque, URL-safe, long enough to be unguessable. */
@@ -294,8 +296,8 @@ export class AiAssistantController {
         });
         const streamResult = this.aiChatService.streamChat(ctx, query, history, customerId, abort.signal);
 
-        // Use the AI SDK's toUIMessageStreamResponse for useChat() compatibility
-        const streamResponse = streamResult.toUIMessageStreamResponse();
+        // UI message stream for useChat(), without provider metadata (see withoutProviderMetadata)
+        const streamResponse = createUIMessageStreamResponse({ stream: withoutProviderMetadata(streamResult.toUIMessageStream()) });
 
         // Forward status and headers
         res.status(streamResponse.status ?? 200);

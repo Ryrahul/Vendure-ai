@@ -25,7 +25,7 @@ Ships a pre-compiled CSS file — just import and go. Works with any React frame
 ## Installation
 
 ```bash
-npm install @rahul_vendure/ai-chat-react ai @ai-sdk/react
+npm install @rahul_vendure/ai-chat-react ai@^6 @ai-sdk/react@^3
 ```
 
 ## Quick Start

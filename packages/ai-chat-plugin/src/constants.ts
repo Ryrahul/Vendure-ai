@@ -105,8 +105,9 @@ export interface AiAssistantPluginOptions {
     limits?: ChatLimitsOptions;
     /**
      * Let the admin assistant search the web and read public web pages for competitor and
-     * market research. By default searches use OpenAI's built-in web search (billed by
-     * OpenAI per search call) with `openaiApiKey` and `chatModel`.
+     * market research. By default searches use OpenAI's built-in web search with
+     * `openaiApiKey`, or — without it — the Azure deployment's web search (`azureOpenai`);
+     * both are billed by the provider per search call.
      * @default true
      */
     enableWebResearch?: boolean;

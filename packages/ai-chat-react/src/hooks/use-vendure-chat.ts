@@ -46,19 +46,27 @@ export function useVendureChat(options: UseVendureChatOptions): UseVendureChatRe
     const conversationIdRef = useRef<string | null>(null);
     const getConversationId = () => (conversationIdRef.current ??= createConversationId());
 
+    // useChat keeps the transport from its first render, so the tokens are read through refs:
+    // a shopper who gets a session (e.g. after adding to cart) or logs in is then recognised
+    // on the next message, and the assistant sees the same cart as the storefront.
+    const authTokenRef = useRef(authToken);
+    authTokenRef.current = authToken;
+    const channelTokenRef = useRef(channelToken);
+    channelTokenRef.current = channelToken;
+
     const transport = useMemo(
         () =>
             new DefaultChatTransport({
                 api: chatEndpoint ?? `${vendureUrl.replace(/\/$/, '')}/ai-assistant/stream`,
                 headers: () => ({
-                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-                    ...(channelToken ? { 'vendure-token': channelToken } : {}),
+                    ...(authTokenRef.current ? { Authorization: `Bearer ${authTokenRef.current}` } : {}),
+                    ...(channelTokenRef.current ? { 'vendure-token': channelTokenRef.current } : {}),
                 }),
                 // Send the conversationId with every request so the server
                 // can look up history from its cache instead of receiving it.
                 body: () => ({ conversationId: getConversationId() }),
             }),
-        [vendureUrl, authToken, chatEndpoint, channelToken],
+        [vendureUrl, chatEndpoint],
     );
 
     const { messages, sendMessage: rawSendMessage, status } = useChat({

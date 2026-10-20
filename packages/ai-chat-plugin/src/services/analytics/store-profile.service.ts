@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { RequestContext, TransactionalConnection } from '@vendure/core';
+import { Channel, RequestContext, TransactionalConnection } from '@vendure/core';
 
 import { AiStoreProfile } from '../../entities/ai-store-profile.entity';
+import { SalesAnalyticsService } from './sales-analytics.service';
 
 export type StoreProfileInput = Partial<
     Pick<
@@ -12,10 +13,22 @@ export type StoreProfileInput = Partial<
 
 export const DEFAULT_LEAD_TIME_DAYS = 14;
 
+/** A location worked out from the store's own data, used until the admin saves a real one. */
+export interface InferredLocation {
+    countryCode: string;
+    region?: string;
+    city?: string;
+    /** Where it came from, for the assistant to state its assumption. */
+    source: string;
+}
+
 /** The store profile of the active channel. */
 @Injectable()
 export class StoreProfileService {
-    constructor(private connection: TransactionalConnection) {}
+    constructor(
+        private connection: TransactionalConnection,
+        private analytics: SalesAnalyticsService,
+    ) {}
 
     async get(ctx: RequestContext): Promise<AiStoreProfile | undefined> {
         return (await this.connection.getRepository(ctx, AiStoreProfile).findOne({ where: { channelId: Number(ctx.channelId) } })) ?? undefined;
@@ -32,6 +45,38 @@ export class StoreProfileService {
         }
         const profile = existing ? Object.assign(existing, clean) : new AiStoreProfile({ ...clean, channelId: Number(ctx.channelId) });
         return repo.save(profile);
+    }
+
+    /**
+     * The store's likely location when the profile has none: where most orders ship to,
+     * otherwise the country of the channel's tax or shipping zone when it has exactly one.
+     */
+    async inferLocation(ctx: RequestContext): Promise<InferredLocation | undefined> {
+        const shipping = await this.analytics.mainShippingLocation(ctx);
+        if (shipping) {
+            return { ...shipping, source: `most orders ship there (${shipping.orders} orders in the last year)` };
+        }
+        const channel = await this.connection.getRepository(ctx, Channel).findOne({
+            where: { id: ctx.channelId },
+            relations: ['defaultTaxZone', 'defaultTaxZone.members', 'defaultShippingZone', 'defaultShippingZone.members'],
+        });
+        for (const zone of [channel?.defaultTaxZone, channel?.defaultShippingZone]) {
+            const countries = (zone?.members ?? []).filter(m => (m as any).type === 'country' || !(m as any).type);
+            if (countries.length === 1 && countries[0].code) {
+                return { countryCode: countries[0].code.toUpperCase(), source: `the channel's ${zone === channel?.defaultTaxZone ? 'tax' : 'shipping'} zone "${zone!.name}"` };
+            }
+        }
+        return undefined;
+    }
+
+    /** The saved location, or the inferred one. */
+    async location(ctx: RequestContext): Promise<{ city?: string; region?: string; countryCode?: string }> {
+        const profile = await this.get(ctx);
+        if (profile?.countryCode || profile?.city || profile?.region) {
+            return { city: profile.city ?? undefined, region: profile.region ?? undefined, countryCode: profile.countryCode ?? undefined };
+        }
+        const inferred = await this.inferLocation(ctx);
+        return inferred ? { city: inferred.city, region: inferred.region, countryCode: inferred.countryCode } : {};
     }
 
     /** Which important fields are still unknown, so the assistant can ask for them. */

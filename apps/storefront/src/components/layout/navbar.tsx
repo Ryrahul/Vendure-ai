@@ -38,7 +38,7 @@ export async function Navbar() {
                             </Suspense>
                         </div>
                         <ThemeSwitcher />
-                        <NavbarChat vendureUrl={VENDURE_BASE_URL} authToken={authToken} />
+                        <NavbarChat vendureUrl={VENDURE_BASE_URL} authToken={authToken} channelToken={process.env.VENDURE_CHANNEL_TOKEN || process.env.NEXT_PUBLIC_VENDURE_CHANNEL_TOKEN} />
                         <Suspense>
                             <NavbarCart/>
                         </Suspense>

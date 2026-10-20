@@ -313,11 +313,38 @@ function SourcesCard({ card }: { card: Extract<InsightCard, { type: 'webSources'
     );
 }
 
+/** Cards with nothing to show (older plugin versions sent these for channels without sales). */
+function isEmpty(card: InsightCard): boolean {
+    switch (card.type) {
+        case 'salesSummary':
+            return !card.orders && !card.previous?.orders;
+        case 'salesTrend':
+            return !card.points?.some(p => p.orders > 0);
+        case 'forecast':
+            return !card.forecast?.length;
+        case 'inventoryPlan':
+        case 'topProducts':
+            return !card.items?.length;
+        case 'customerLocations':
+            return !card.ordersWithAddress;
+        case 'webSources':
+            return !card.sources?.length;
+        default:
+            return true;
+    }
+}
+
+export function hasVisibleInsights(insights: InsightCard[]): boolean {
+    return insights.some(card => !isEmpty(card));
+}
+
 /** Charts, tables and source lists the assistant attached to a reply. */
 export function InsightCards({ insights }: { insights: InsightCard[] }) {
+    const cards = insights.filter(card => !isEmpty(card));
+    if (!cards.length) return null;
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {insights.map((card, i) => {
+            {cards.map((card, i) => {
                 switch (card.type) {
                     case 'forecast':
                         return <ForecastCard key={i} card={card} />;

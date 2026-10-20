@@ -6,7 +6,7 @@ import type { ChatMessage } from '../types';
 import { ProductCard } from './ProductCard';
 import { OrderCard } from './OrderCard';
 import { ConfirmationCard } from './ConfirmationCard';
-import { InsightCards } from './InsightCards';
+import { hasVisibleInsights, InsightCards } from './InsightCards';
 
 interface ChatMessageBubbleProps {
     message: ChatMessage;
@@ -78,7 +78,7 @@ export function ChatMessageBubble({ message, onResolveConfirmation }: ChatMessag
             )}
 
             {/* Charts and tables from the business-insight tools */}
-            {message.insights && message.insights.length > 0 && (
+            {message.insights && message.insights.length > 0 && hasVisibleInsights(message.insights) && (
                 <div style={{ borderTop: '1px solid var(--border, #e2e8f0)', padding: 12 }}>
                     <InsightCards insights={message.insights} />
                 </div>

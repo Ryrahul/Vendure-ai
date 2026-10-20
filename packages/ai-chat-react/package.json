@@ -1,7 +1,7 @@
 {
   "name": "@rahul_vendure/ai-chat-react",
-  "version": "0.2.3",
-  "description": "Drop-in AI shopping assistant React component for Vendure stores \u2014 chat UI with product cards, cart actions, and order tracking",
+  "version": "0.2.4",
+  "description": "Drop-in AI shopping assistant React component for Vendure stores — chat UI with product cards, cart actions, and order tracking",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -50,8 +50,8 @@
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18",
-    "ai": ">=6.0.0",
-    "@ai-sdk/react": ">=3.0.0"
+    "ai": "^6.0.0",
+    "@ai-sdk/react": "^3.0.0"
   },
   "dependencies": {
     "react-markdown": "^10.0.0",

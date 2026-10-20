@@ -194,4 +194,25 @@ describe('business insights', () => {
         expect(modelSees).toMatch(/NPR 23,500/);
         expect(modelSees).toMatch(/https:\/\/shop\.example\.com\/camera/);
     });
+
+    it('infers the store location from where orders ship when none is saved', async () => {
+        const inferred = await server.app.get(StoreProfileService).inferLocation(ctx);
+        expect(inferred).toMatchObject({ countryCode: 'NP', city: 'Kathmandu', region: 'Bagmati' });
+        expect(inferred!.source).toMatch(/most orders ship there/);
+    });
+
+    it('a channel without sales gets no empty cards, and a hint to use the catalog', async () => {
+        const user = await server.app.get(TransactionalConnection).rawConnection.getRepository(User).findOneOrFail({
+            where: { identifier: 'superadmin' },
+            relations: ['roles', 'roles.channels'],
+        });
+        const empty = await server.app.get(RequestContextService).create({ apiType: 'admin', user, channelOrToken: DEFAULT_CHANNEL_TOKEN });
+        (empty as any)._channel = { ...empty.channel, id: 999999 };
+        const top = await insights.topProducts(empty, 30, 5, 'revenue');
+        expect(top.insight).toBeUndefined();
+        expect(top.summary).toMatch(/searchProducts/);
+        expect((await insights.salesSummary(empty, 30)).insight).toBeUndefined();
+        expect((await insights.salesTrend(empty, 30, 'week')).insight).toBeUndefined();
+        expect((await insights.customerLocations(empty, 30)).insight).toBeUndefined();
+    });
 });

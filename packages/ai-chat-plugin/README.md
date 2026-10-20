@@ -128,7 +128,7 @@ Out of the box everything runs on OpenAI with `openaiApiKey`. Each part can be s
 |---|---|---|
 | Chat | `openaiApiKey` + `chatModel` name | `azureOpenai`, or `chatModel` as any AI SDK model instance (must support tool calling) |
 | Embeddings | `openaiApiKey` + `embeddingModel` name | `embeddingModel` as any AI SDK embedding model, or your own `embedTexts` function — set `embeddingDimensions` to match |
-| Web search (admin) | OpenAI built-in web search | your own `webSearch` function; none if neither is available |
+| Web search (admin) | OpenAI built-in web search, or Azure's (`webSearchPreview`) without an OpenAI key | your own `webSearch` function; none for other providers unless you register one |
 
 ```ts
 import { createAzure } from '@ai-sdk/azure';
@@ -152,11 +152,11 @@ AiAssistantPlugin.init({
 });
 ```
 
-Install the provider package you use (`@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, …) in your project. The plugin checks at startup that a chat model and an embedding source are configured.
+Install the provider package you use (`@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, …) in your project. The server and worker check at startup that a chat model and an embedding source are configured (build tools that only load the config, like the dashboard's `vite build`, don't need the keys).
 
 **Changing the embedding model:** set `embeddingDimensions` to the new model's size. The `embedding` columns change size (with `synchronize: true`, or generate a migration), which clears the stored vectors; then run `triggerEmbedAll` ("Embed all" in the dashboard). Similarity thresholds are tuned for OpenAI's `text-embedding-3` models; other models may return more or fewer semantic matches.
 
-**Web search** for the admin assistant uses OpenAI's built-in search when `openaiApiKey` is set (billed by OpenAI per search). Azure and self-hosted models have no default; register your own:
+**Web search** for the admin assistant uses OpenAI's built-in search when `openaiApiKey` is set, otherwise the Azure deployment's built-in search (`azureOpenai`) — both billed by the provider per search. Self-hosted and other providers have no default; register your own:
 
 ```ts
 AiAssistantPlugin.init({
@@ -333,6 +333,8 @@ The admin assistant doubles as a business analyst. Ask things like *"How did sal
 | `getStoreProfile` / `updateStoreProfile` | Store location, regions served, business description, known competitors and supplier lead time — the assistant asks for what it can't look up and saves it | `ReadSettings`/`ReadOrder` · `UpdateSettings` |
 | `searchWeb` | Web search localized to the store, with source links (see [Model providers](#model-providers)) | — |
 | `fetchWebPage` | Reads a public web page as text. Only http(s) on ports 80/443; private, loopback and cloud-metadata addresses are refused, also after redirects and DNS lookups | — |
+
+The assistant doesn't interview you: it uses the saved store profile, or infers the location from where orders ship (or the channel's tax/shipping zone), uses catalog products when there are no sales yet, and states its assumptions in one line. Tell it facts ("we're in Pokhara", "our supplier takes 10 days") and it remembers them per channel.
 
 Sales figures count placed orders in the active channel (not cancelled; seller sub-orders excluded), in the channel's currency. Forecasts are statistical projections of past sales: they don't know about upcoming promotions, holidays or stock-outs, and the assistant says so. Forecasts need at least a few weeks of orders.
 

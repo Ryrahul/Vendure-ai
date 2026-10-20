@@ -30,7 +30,7 @@ export { SalesAnalyticsService } from './services/analytics/sales-analytics.serv
 export { BusinessInsightsService } from './services/analytics/business-insights.service';
 export { StoreProfileService } from './services/analytics/store-profile.service';
 export { forecastSeries, backtest } from './services/analytics/forecast';
-export { openAiWebSearch } from './services/analytics/web-search';
+export { azureWebSearch, openAiWebSearch } from './services/analytics/web-search';
 export type { WebSearchFunction, WebSearchLocation, WebSearchResult, WebSearchSource } from './services/analytics/web-search';
 export type { InsightCard, InventoryPlanItem } from './services/analytics/insight-cards';
 export type { PendingAdminAction, PendingAdminActionView } from './services/admin-confirmation.service';

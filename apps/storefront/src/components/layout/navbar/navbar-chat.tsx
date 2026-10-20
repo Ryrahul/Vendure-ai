@@ -4,21 +4,21 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { VendureAiChat } from '@rahul_vendure/ai-chat-react';
 import '@rahul_vendure/ai-chat-react/styles.css';
-import { formatPrice } from '@/lib/format';
 
 interface NavbarChatProps {
     vendureUrl: string;
     authToken?: string;
+    channelToken?: string;
 }
 
-export function NavbarChat({ vendureUrl, authToken }: NavbarChatProps) {
+export function NavbarChat({ vendureUrl, authToken, channelToken }: NavbarChatProps) {
     const router = useRouter();
 
     return (
         <VendureAiChat
             vendureUrl={vendureUrl}
             authToken={authToken}
-            formatPrice={formatPrice}
+            channelToken={channelToken}
             onCartUpdate={() => router.refresh()}
             onAddToCart={async (variantId, quantity, productName) => {
                 const { addToCart } = await import('@/app/product/[slug]/actions');

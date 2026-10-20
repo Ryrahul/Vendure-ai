@@ -1,4 +1,4 @@
-import { Product, ProductVariant, Collection, Order, TransactionalConnection } from '@vendure/core';
+import { Product, ProductVariant, Collection, Order, RequestContext, TransactionalConnection } from '@vendure/core';
 import { In } from 'typeorm';
 import type { AiChatProduct, AiChatCollection, AiChatOrder, AiChatOrderLine, AiActiveOrder, AiCartLine } from './types';
 
@@ -82,15 +82,33 @@ export class ChatResultMapper {
         };
     }
 
-    mapProducts(products: Product[]): AiChatProduct[] {
+    /**
+     * The variant price for the active channel and currency (prices exist per channel and
+     * currency), falling back to the channel's price in another currency, then any price.
+     */
+    static channelPrice(
+        prices: Array<{ price: number; channelId?: unknown; currencyCode?: string }> | undefined,
+        ctx?: RequestContext,
+    ): { price: number; currencyCode?: string } | undefined {
+        if (!prices?.length) return undefined;
+        const inChannel = ctx ? prices.filter(p => String(p.channelId) === String(ctx.channelId)) : prices;
+        const chosen =
+            (ctx && inChannel.find(p => p.currencyCode === ctx.currencyCode)) ?? inChannel[0] ?? (ctx ? undefined : prices[0]);
+        return chosen ? { price: chosen.price, currencyCode: chosen.currencyCode } : undefined;
+    }
+
+    mapProducts(products: Product[], ctx?: RequestContext): AiChatProduct[] {
         const result: AiChatProduct[] = [];
         for (const p of products) {
             const translations = (p as Product & { translations?: { name?: string; slug?: string }[] }).translations;
             const name = translations?.[0]?.name ?? (p as { name?: string }).name ?? '';
             const slug = translations?.[0]?.slug ?? (p as { slug?: string }).slug ?? '';
             const variant = (p as Product & { variants?: ProductVariant[] }).variants?.[0];
-            const prices = (variant as ProductVariant & { productVariantPrices?: { price: number }[] })?.productVariantPrices;
-            const priceValue = prices?.[0]?.price ?? (variant as { price?: number })?.price ?? 0;
+            const prices = (variant as ProductVariant & { productVariantPrices?: Array<{ price: number; channelId?: unknown; currencyCode?: string }> })
+                ?.productVariantPrices;
+            const channelPrice = ChatResultMapper.channelPrice(prices, ctx);
+            const priceValue = channelPrice?.price ?? (variant as { price?: number })?.price ?? 0;
+            const currencyCode = channelPrice?.currencyCode ?? ctx?.currencyCode;
             const asset = (p as Product & { featuredAsset?: { preview?: string } }).featuredAsset;
             const image = asset?.preview ?? null;
             const variantId = variant ? String(variant.id) : '';
@@ -99,6 +117,7 @@ export class ChatResultMapper {
                 name: String(name),
                 slug: String(slug),
                 price: Number(priceValue),
+                ...(currencyCode ? { currencyCode } : {}),
                 image: this.resolveAssetUrl(image),
                 variantId,
             });
@@ -128,15 +147,17 @@ export class ChatResultMapper {
             });
     }
 
-    async loadProductsByIds(productIds: number[]): Promise<AiChatProduct[]> {
+    /** Loads products in the given order; with a context, only those in its channel, with its prices. */
+    async loadProductsByIds(productIds: number[], ctx?: RequestContext): Promise<AiChatProduct[]> {
         if (productIds.length === 0) return [];
         const repo = this.connection.rawConnection.getRepository(Product);
         const list = await repo.find({
             where: { id: In(productIds) },
-            relations: ['variants', 'variants.productVariantPrices', 'featuredAsset', 'translations'],
+            relations: ['variants', 'variants.productVariantPrices', 'featuredAsset', 'translations', ...(ctx ? ['channels'] : [])],
         });
-        const byId = new Map(list.map(p => [p.id, p]));
-        return this.mapProducts(productIds.map(id => byId.get(id)).filter((p): p is Product => p != null));
+        const visible = ctx ? list.filter(p => p.channels?.some(c => String(c.id) === String(ctx.channelId))) : list;
+        const byId = new Map(visible.map(p => [p.id, p]));
+        return this.mapProducts(productIds.map(id => byId.get(id)).filter((p): p is Product => p != null), ctx);
     }
 
     async loadCollectionsByIds(collectionIds: number[]): Promise<AiChatCollection[]> {

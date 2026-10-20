@@ -50,8 +50,9 @@ export class AdminProductTools {
             .leftJoinAndSelect('product.translations', 'translation')
             .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
             .leftJoinAndSelect('product.variants', 'variant')
-            .leftJoinAndSelect('variant.productVariantPrices', 'price')
+            .leftJoinAndSelect('variant.productVariantPrices', 'price', 'price.channelId = :channelId', { channelId: ctx.channelId })
             .leftJoinAndSelect('variant.stockLevels', 'stockLevel')
+            .innerJoin('product.channels', 'productChannel', 'productChannel.id = :channelId', { channelId: ctx.channelId })
             .where('product.deletedAt IS NULL');
 
         if (query) {
@@ -73,10 +74,10 @@ export class AdminProductTools {
             return { products: [], collections: [], summary: query ? `No products found matching "${query}".` : 'No products found in the store.' };
         }
 
-        const mapped = this.mapper.mapProducts(products);
+        const mapped = this.mapper.mapProducts(products, ctx);
 
         // Build a rich summary with admin details the LLM can reference
-        const summaryLines = products.map(p => {
+        const summaryLines = products.map((p, i) => {
             const name = (p as any).translations?.[0]?.name ?? '';
             const enabled = p.enabled ? 'Enabled' : 'DISABLED';
             const variants = ((p as any).variants ?? []) as any[];
@@ -85,7 +86,10 @@ export class AdminProductTools {
                 return sum + levels.reduce((s: number, sl: any) => s + (sl.stockOnHand ?? 0), 0);
             }, 0);
             const variantCount = variants.length;
-            return `"${name}" (ID: ${p.id}, ${enabled}, ${variantCount} variants, stock: ${totalStock})`;
+            const price = mapped[i]
+                ? `${formatPrice(mapped[i].price, mapped[i].currencyCode ?? ctx.currencyCode)}${ctx.channel.pricesIncludeTax ? ' incl. tax' : ' excl. tax'}`
+                : 'no price';
+            return `"${name}" (ID: ${p.id}, ${enabled}, price ${price}, ${variantCount} variants, stock: ${totalStock})`;
         });
 
         const matchText = query ? `matching "${query}"` : '(most recent)';
@@ -127,14 +131,14 @@ export class AdminProductTools {
             }
         }
 
-        const products = similar.length > 0 ? await this.mapper.loadProductsByIds(similar.map(s => s.productId)) : [];
+        const products = similar.length > 0 ? await this.mapper.loadProductsByIds(similar.map(s => s.productId), ctx) : [];
         const collections = similarCollections.length > 0 ? await this.mapper.loadCollectionsByIds(similarCollections.map(s => s.collectionId)) : [];
 
         return {
             products,
             collections,
             summary: products.length > 0
-                ? `Found ${products.length} product(s) related to "${query}": ${products.map(p => `"${p.name}" (${formatPrice(p.price, ctx.currencyCode)})`).join(', ')}. Product cards with images are shown in the UI — keep your text brief.`
+                ? `Found ${products.length} product(s) related to "${query}": ${products.map(p => `"${p.name}" (${formatPrice(p.price, p.currencyCode ?? ctx.currencyCode)})`).join(', ')}. Product cards with images are shown in the UI — keep your text brief.`
                 : `No products found related to "${query}".`,
         };
     }
@@ -150,8 +154,9 @@ export class AdminProductTools {
             .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
             .leftJoinAndSelect('product.variants', 'variant')
             .leftJoinAndSelect('variant.translations', 'variantTranslation')
-            .leftJoinAndSelect('variant.productVariantPrices', 'price')
+            .leftJoinAndSelect('variant.productVariantPrices', 'price', 'price.channelId = :channelId', { channelId: ctx.channelId })
             .leftJoinAndSelect('variant.stockLevels', 'stockLevel')
+            .innerJoin('product.channels', 'productChannel', 'productChannel.id = :channelId', { channelId: ctx.channelId })
             .where('product.deletedAt IS NULL');
 
         if (args.productId) {
@@ -167,7 +172,7 @@ export class AdminProductTools {
             return { products: [], collections: [], summary: `Product not found.` };
         }
 
-        const mapped = this.mapper.mapProducts([product]);
+        const mapped = this.mapper.mapProducts([product], ctx);
         const name = (product as any).translations?.[0]?.name ?? '';
         const description = (product as any).translations?.[0]?.description ?? '';
         const enabled = product.enabled ? 'Enabled' : 'DISABLED';
@@ -175,11 +180,12 @@ export class AdminProductTools {
 
         const variantSummary = variants.map((v: any) => {
             const vName = v.translations?.[0]?.name ?? '';
-            const priceVal = v.productVariantPrices?.[0]?.price ?? 0;
+            const channelPrice = ChatResultMapper.channelPrice(v.productVariantPrices, ctx);
+            const priceVal = channelPrice?.price ?? 0;
             const sku = v.sku ?? '';
             const levels = v.stockLevels ?? [];
             const stockOnHand = levels.reduce((s: number, sl: any) => s + (sl.stockOnHand ?? 0), 0);
-            return `${vName} (SKU: ${sku}, ${formatPrice(priceVal, ctx.currencyCode)}, stock: ${stockOnHand})`;
+            return `${vName} (SKU: ${sku}, ${formatPrice(priceVal, channelPrice?.currencyCode ?? ctx.currencyCode)}, stock: ${stockOnHand})`;
         }).join('; ');
 
         const descSnippet = description.length > 200 ? description.substring(0, 200) + '...' : description;
