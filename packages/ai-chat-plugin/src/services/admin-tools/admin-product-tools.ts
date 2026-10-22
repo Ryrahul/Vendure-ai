@@ -113,11 +113,12 @@ export class AdminProductTools {
             .leftJoinAndSelect('variant.stockLevels', 'stockLevel')
             .innerJoin('product.channels', 'productChannel', 'productChannel.id = :channelId', { channelId: ctx.channelId })
             .where('product.deletedAt IS NULL');
-        if (query) {
-            qb = qb.andWhere('(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term)', {
-                term: `%${query.toLowerCase()}%`,
+        // Every word must appear in the name or description, in any order ("running shoes").
+        searchTerms(query).forEach((term, i) => {
+            qb = qb.andWhere(`(LOWER(translation.name) LIKE :term${i} OR LOWER(translation.description) LIKE :term${i})`, {
+                [`term${i}`]: `%${term}%`,
             });
-        }
+        });
         if (collectionId != null) {
             // A subquery, so the loaded variants aren't limited to the collection's.
             const inCollection = qb
@@ -500,4 +501,22 @@ export class AdminProductTools {
             return { summary: `Error deleting product variant: ${e instanceof Error ? e.message : String(e)}` };
         }
     }
+}
+
+/**
+ * Lower-cased words of a search, with simple English plurals reduced to their stem so that
+ * "cameras" finds "Camera" and "watches" finds "Watch". Matched as substrings.
+ */
+export function searchTerms(query: string): string[] {
+    return query
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter(word => word.length > 1)
+        .map(word => {
+            if (word.length <= 3) return word;
+            if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
+            if (/(ches|shes|xes|sses|zes)$/.test(word)) return word.slice(0, -2);
+            if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
+            return word;
+        });
 }

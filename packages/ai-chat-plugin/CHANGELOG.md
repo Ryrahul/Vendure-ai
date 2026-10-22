@@ -5,6 +5,7 @@
 ### Fixed
 
 - **"Which products are electronics?" found nothing.** The admin `searchProducts` tool only matched product names and descriptions. It now takes a `collection` (name or slug) to list a collection's products, and a keyword that names a collection (e.g. "electronics") returns that collection's products instead of nothing.
+- **Admin product search matched only exact phrases.** "cameras" found only products whose text contained "cameras". Every word now has to appear (in any order), and simple plurals are reduced ("cameras" → camera, "watches" → watch).
 
 ## 0.6.0
 

@@ -48,6 +48,12 @@ describe('admin product search by collection', () => {
         expect(plain).toMatch(/2 variants/);
     });
 
+    it('matches plurals and words in any order', async () => {
+        expect(names(await run({ query: 'cameras' }))).toEqual(['Camera']);
+        expect(names(await run({ query: 'laptops' }))).toEqual(['Laptop']);
+        expect(names(await run({ query: 'phone smart' }))).toEqual(['Phone']); // "A smart phone"
+    });
+
     it('combines keyword and collection, and explains an unknown collection', async () => {
         expect(names(await run({ query: 'cam', collection: 'Electronics' }))).toEqual(['Camera']);
         expect((await run({ collection: 'Garden' })).summary).toMatch(/No collection named "Garden"/);
