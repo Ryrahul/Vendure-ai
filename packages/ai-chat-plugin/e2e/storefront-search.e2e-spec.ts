@@ -117,6 +117,30 @@ describe('storefront search (DefaultSearchPlugin)', () => {
             expect(result.summary).toContain('$238.80');
         });
 
+        it('searchProducts lists a collection, by name or when the keyword names one', async () => {
+            const productNames = (r: any) => r.products.map((p: any) => p.name).sort();
+            // Tablet is disabled, so the storefront (and the assistant) never sees it.
+            expect(productNames(await searchTools().searchProducts(ctxA, { collection: 'Electronics' }))).toEqual(['Camera', 'Laptop', 'Phone']);
+            const byKeyword = await searchTools().searchProducts(ctxA, { query: 'electronics' });
+            expect(productNames(byKeyword)).toEqual(['Camera', 'Laptop', 'Phone']);
+            expect(byKeyword.summary).toMatch(/in the "Electronics" collection/);
+            expect((await searchTools().searchProducts(ctxA, { collection: 'Garden' })).summary).toMatch(/No collection named "Garden"/);
+            // The model sometimes repeats the category as the keyword.
+            expect(productNames(await searchTools().searchProducts(ctxA, { query: 'electronics', collection: 'electronics' }))).toEqual(['Camera', 'Laptop', 'Phone']);
+        });
+
+        it('getCollections matches loosely and shows the products of a single match', async () => {
+            const result = await searchTools().getCollections(ctxA, { query: 'electronic products' });
+            expect(result.collections.map((c: any) => c.name)).toEqual(['Electronics']);
+            expect(result.products.map((p: any) => p.name).sort()).toEqual(['Camera', 'Laptop', 'Phone']);
+            expect(result.summary).toMatch(/Found the "Electronics" collection/);
+            expect((await searchTools().getCollections(ctxA, { query: 'gardening' })).summary).toMatch(/No collections found/);
+        });
+
+        it('searchProducts retries plurals in the singular', async () => {
+            expect((await searchTools().searchProducts(ctxA, { query: 'cameras' })).products.map((p: any) => p.name)).toEqual(['Camera']);
+        });
+
         it('filterByPrice uses tax-inclusive prices', async () => {
             const result = await searchTools().filterByPrice(ctxA, { maxPrice: 20000 });
             expect(result.products.map((p: any) => p.name)).toEqual(['Headphones']);

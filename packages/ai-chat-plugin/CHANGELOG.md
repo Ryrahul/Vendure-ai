@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+
+### Fixed
+
+- **Shop assistant: "what do you have in computers?" found nothing.** The storefront `searchProducts` tool only sent a keyword to the search engine. It now takes a `collection` (name or slug) and passes it to the Shop API `search` as `collectionSlug`, so any search engine handles it; a keyword with no results is retried in the singular ("computers" → computer) and then as a collection name.
+- **Asking for a category didn't show its products.** `getCollections` matches loosely now ("home and garden" → Home & Garden, "plants", "camera and photo stuff") and, when one collection matches, returns some of its products, so "do you sell plants?" shows plants instead of asking a follow-up question.
+- A keyword that just repeats the collection ("footwear" in Footwear) no longer empties the result — shop and admin search fall back to the whole collection.
+
 ## 0.6.1
 
 ### Fixed

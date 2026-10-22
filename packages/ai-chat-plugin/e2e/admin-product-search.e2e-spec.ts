@@ -56,6 +56,7 @@ describe('admin product search by collection', () => {
 
     it('combines keyword and collection, and explains an unknown collection', async () => {
         expect(names(await run({ query: 'cam', collection: 'Electronics' }))).toEqual(['Camera']);
+        expect(names(await run({ query: 'electronics', collection: 'Electronics' }))).toEqual(['Camera', 'Laptop', 'Phone', 'Tablet']);
         expect((await run({ collection: 'Garden' })).summary).toMatch(/No collection named "Garden"/);
         expect((await run({ query: 'nothing-like-this' })).summary).toMatch(/No products found matching/);
     });

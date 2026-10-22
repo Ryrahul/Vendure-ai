@@ -126,12 +126,14 @@ export class AiChatService implements OnModuleInit {
     private buildTools(ctx: RequestContext, customerId?: string | number): ToolSet {
         return {
             searchProducts: tool({
-                description: 'Search for products by keyword or product name. Returns products with their id, name, slug, price, image, and variantId.',
+                description:
+                    'Search for products by keyword and/or collection (category). Use collection to list what a category contains ("what do you have in computers?"). Returns products with their id, name, slug, price, image, and variantId.',
                 inputSchema: z.object({
-                    query: z.string().describe('The search term or product keyword'),
+                    query: z.string().optional().describe('The search term or product keyword'),
+                    collection: z.string().optional().describe('Collection (category) name or slug, e.g. "Computers"'),
                     take: z.number().optional().describe('Number of results to return (default 10, max 20)'),
                 }),
-                execute: async ({ query, take }) => this.searchTools.searchProducts(ctx, { query, take }),
+                execute: async ({ query, collection, take }) => this.searchTools.searchProducts(ctx, { query, collection, take }),
             }),
             vectorSearch: tool({
                 description: 'Semantic/intent-based product search. Use for vague queries like "gift for dad", "something romantic".',

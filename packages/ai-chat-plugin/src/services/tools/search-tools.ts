@@ -3,8 +3,9 @@ import { RequestContext } from '@vendure/core';
 import { EmbeddingService } from '../embedding.service';
 import { ProductEmbeddingService } from '../product-embedding.service';
 import { CollectionEmbeddingService } from '../collection-embedding.service';
+import { searchTerms } from '../search-terms';
 import { ChatResultMapper } from '../chat-result-mapper';
-import { StorefrontApiService, type StorefrontProduct } from '../storefront-api.service';
+import { StorefrontApiService, type StorefrontCollection, type StorefrontProduct } from '../storefront-api.service';
 import { MAX_CHAT_PRODUCTS, MAX_CHAT_COLLECTIONS, SIMILARITY_THRESHOLD, FALLBACK_MIN_SCORE, formatPrice } from '../../constants';
 import type { AiChatProduct, ToolResult } from '../types';
 
@@ -31,21 +32,84 @@ export class SearchTools {
     async searchProducts(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
         const query = String(args.query ?? '').trim();
         const take = clamp(Number(args.take) || 10, 1, 20);
-        if (!query) {
+        const collectionArg = String(args.collection ?? '').trim();
+        if (!query && !collectionArg) {
             return { products: [], collections: [], summary: 'No search query provided' };
         }
-        const result = await this.guard(`search "${query}"`, () => this.storefront.search(ctx, { term: query, take }));
-        if ('error' in result) {
-            return result.error;
+
+        let collection: StorefrontCollection | undefined;
+        if (collectionArg) {
+            const found = await this.guard('collection lookup', () => this.findCollection(ctx, collectionArg));
+            if (typeof found === 'object' && found && 'error' in found) return found.error;
+            collection = found as StorefrontCollection | undefined;
+            if (!collection) {
+                return { products: [], collections: [], summary: `No collection named "${collectionArg}". Use getCollections to see the collections.` };
+            }
         }
+
+        const run = (term: string | undefined) =>
+            this.guard(`search "${term ?? collection?.name}"`, () => this.storefront.search(ctx, { term, take, collectionSlug: collection?.slug }));
+        let result = await run(query || undefined);
+        if ('error' in result) return result.error;
+
+        // Nothing for the words as typed: try singular forms ("computers" → "computer"), then the
+        // whole collection — a keyword often just repeats the category ("footwear" in Footwear)
+        // — or a collection with that name ("what do you have in computers?").
+        if (!result.items.length && query) {
+            const stemmed = searchTerms(query).join(' ');
+            if (stemmed && stemmed !== query.toLowerCase()) {
+                const retry = await run(stemmed);
+                if ('error' in retry) return retry.error;
+                result = retry;
+            }
+            if (!result.items.length && collection) {
+                const inCollection = await run(undefined);
+                if ('error' in inCollection) return inCollection.error;
+                result = inCollection;
+            } else if (!result.items.length && !collection) {
+                const found = await this.guard('collection lookup', () => this.findCollection(ctx, query));
+                if (found && !('error' in (found as object))) {
+                    collection = found as StorefrontCollection;
+                    const inCollection = await run(undefined);
+                    if ('error' in inCollection) return inCollection.error;
+                    result = inCollection;
+                }
+            }
+        }
+
         const products = result.items.map(p => this.toChatProduct(p));
+        const what = [collection ? `in the "${collection.name}" collection` : '', query && !collection ? `matching "${query}"` : '']
+            .filter(Boolean)
+            .join(' ');
         return {
             products,
-            collections: [],
+            collections: collection ? [collection] : [],
             summary: products.length
-                ? `Found ${products.length} product(s) matching "${query}". ${describeProducts(products)}`
-                : `No products found matching "${query}".`,
+                ? `Found ${products.length} product(s) ${what}${result.totalItems > products.length ? ` (${result.totalItems} in total)` : ''}. ${describeProducts(products)}`
+                : `No products found ${what}.`,
         };
+    }
+
+    /** A collection by name or slug: exact match first, otherwise the only match. */
+    private async findCollection(ctx: RequestContext, nameOrSlug: string): Promise<StorefrontCollection | undefined> {
+        const matches = await this.matchCollections(ctx, nameOrSlug);
+        const key = normalizeName(nameOrSlug);
+        const exact = matches.find(c => normalizeName(c.name) === key || c.slug.toLowerCase() === nameOrSlug.toLowerCase());
+        return exact ?? (matches.length === 1 ? matches[0] : undefined);
+    }
+
+    /**
+     * Collections whose name or slug contains every meaningful word of the text, ignoring case,
+     * plurals and "&" vs "and" ("home and garden" → "Home & Garden", "plants" → "Plants").
+     */
+    private async matchCollections(ctx: RequestContext, text: string): Promise<StorefrontCollection[]> {
+        const words = searchTerms(normalizeName(text)).filter(w => !STOP_WORDS.has(w));
+        if (!words.length) return [];
+        const all = await this.storefront.findCollections(ctx, undefined, 100);
+        return all.filter(c => {
+            const haystack = `${normalizeName(c.name)} ${c.slug.toLowerCase().replace(/-/g, ' ')}`;
+            return words.every(w => haystack.includes(w));
+        });
     }
 
     async vectorSearch(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
@@ -93,9 +157,27 @@ export class SearchTools {
 
     async getCollections(ctx: RequestContext, args: Record<string, unknown>): Promise<ToolResult> {
         const query = String(args.query ?? '').trim();
-        const result = await this.guard('collection lookup', () => this.storefront.findCollections(ctx, query || undefined, 15));
+        const result = await this.guard('collection lookup', () =>
+            query ? this.matchCollections(ctx, query) : this.storefront.findCollections(ctx, undefined, 15),
+        );
         if ('error' in result) {
             return result.error;
+        }
+        // One collection asked for ("do you sell plants?"): show some of its products right away.
+        if (query && result.length === 1) {
+            const inCollection = await this.guard('collection products', () =>
+                this.storefront.search(ctx, { collectionSlug: result[0].slug, take: MAX_CHAT_PRODUCTS }),
+            );
+            if (!('error' in inCollection) && inCollection.items.length) {
+                const products = inCollection.items.map(p => this.toChatProduct(p));
+                return {
+                    products,
+                    collections: result,
+                    summary:
+                        `Found the "${result[0].name}" collection (${inCollection.totalItems} product(s)). Showing ${products.length}: ` +
+                        describeProducts(products),
+                };
+            }
         }
         return {
             products: [],
@@ -188,4 +270,20 @@ function clamp(n: number, min: number, max: number) {
 
 function unique<T>(items: T[]): T[] {
     return Array.from(new Set(items));
+}
+
+// Words that say "a category" rather than which one ("electronic products", "garden stuff").
+const STOP_WORDS = new Set([
+    'and', 'the', 'for', 'any', 'anything', 'some', 'something', 'all', 'your', 'you', 'have', 'sell', 'with', 'of', 'in', 'an',
+    'product', 'item', 'stuff', 'thing', 'category', 'categorie', 'collection', 'range', 'section', 'department',
+]);
+
+/** Lower-case, "&" as "and", punctuation as spaces. */
+function normalizeName(text: string): string {
+    return text
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
 }

@@ -19,6 +19,9 @@ import { EmbeddingService } from '../embedding.service';
 import { ProductEmbeddingService } from '../product-embedding.service';
 import { CollectionEmbeddingService } from '../collection-embedding.service';
 import type { AiChatProduct, AiChatCollection, ToolResult } from '../types';
+import { searchTerms } from '../search-terms';
+
+export { searchTerms } from '../search-terms';
 
 interface AdminToolResult {
     summary: string;
@@ -59,8 +62,10 @@ export class AdminProductTools {
         let qb = this.productSearchQuery(ctx, query, collection?.id, args.includeDisabled);
         // A keyword that names a category rather than a product ("electronics"): show that
         // collection's products instead of nothing.
-        if (query && !collection && (await qb.getCount()) === 0) {
-            const match = await this.findCollection(ctx, query);
+        if (query && (await qb.getCount()) === 0) {
+            // Within a collection, the keyword often just repeats it ("footwear" in Footwear):
+            // list the collection. Otherwise try the keyword as a collection name.
+            const match = collection ?? (await this.findCollection(ctx, query));
             if (match) {
                 collection = match;
                 query = '';
@@ -501,22 +506,4 @@ export class AdminProductTools {
             return { summary: `Error deleting product variant: ${e instanceof Error ? e.message : String(e)}` };
         }
     }
-}
-
-/**
- * Lower-cased words of a search, with simple English plurals reduced to their stem so that
- * "cameras" finds "Camera" and "watches" finds "Watch". Matched as substrings.
- */
-export function searchTerms(query: string): string[] {
-    return query
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter(word => word.length > 1)
-        .map(word => {
-            if (word.length <= 3) return word;
-            if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
-            if (/(ches|shes|xes|sses|zes)$/.test(word)) return word.slice(0, -2);
-            if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
-            return word;
-        });
 }
