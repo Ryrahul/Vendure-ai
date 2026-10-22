@@ -57,6 +57,17 @@ export const config: VendureConfig = {
 };
 ```
 
+Add this to your dashboard's `vite.config.mts` — the chat renders Markdown with `react-markdown`, whose dependencies include CommonJS packages that the **Vite dev server** only loads when pre-bundled (production builds don't need it, but without it `vendure dev` shows a blank dashboard):
+
+```ts
+export default defineConfig({
+    // ...
+    optimizeDeps: {
+        include: ['@rahul_vendure/ai-chat-dashboard > react-markdown', '@rahul_vendure/ai-chat-dashboard > remark-gfm'],
+    },
+});
+```
+
 Then rebuild the dashboard (`npx vite build`, or restart `vite` in development). The Vite plugin finds the extension through `AiChatDashboardPlugin`. Building only loads your config, so it doesn't need API keys.
 
 Give non-SuperAdmin roles the `UseAiAdminAssistant` permission under **Settings → Roles**.
@@ -111,6 +122,9 @@ export default defineConfig({
         vendureDashboardPlugin({ /* ... */ }),
         workspaceDashboardExtensions(),
     ],
+    optimizeDeps: {
+        include: ['react-markdown', 'remark-gfm'],
+    },
 });
 ```
 

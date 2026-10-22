@@ -80,6 +80,10 @@ function workspaceDashboardExtensions(): Plugin {
 }
 
 export default defineConfig({
+    // react-markdown (AI chat) depends on CommonJS packages the Vite dev server must pre-bundle.
+    optimizeDeps: {
+        include: ['react-markdown', 'remark-gfm'],
+    },
     base: '/dashboard',
     build: {
         outDir: join(__dirname, 'dist/dashboard'),

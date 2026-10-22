@@ -182,7 +182,7 @@ export class AdminAiChatService implements OnModuleInit {
     private buildTools(ctx: RequestContext): ToolSet {
         return {
             // ── Products (read) ──
-            searchProducts: tool({ description: 'Search products by keyword, or list all products if no query given. Returns product cards.', inputSchema: z.object({ query: z.string().optional().describe('Search term. Omit to list all products.'), take: z.number().optional(), includeDisabled: z.boolean().optional() }), execute: async (a) => this.productTools.searchProducts(ctx, a) }),
+            searchProducts: tool({ description: 'Search products by keyword and/or collection (category), or list all products if neither is given. Shows price and stock. Returns product cards.', inputSchema: z.object({ query: z.string().optional().describe('Search term matched against product names and descriptions. Omit to list all products.'), collection: z.string().optional().describe('Collection (category) name or slug, e.g. "Electronics", to list the products in it'), take: z.number().optional(), includeDisabled: z.boolean().optional() }), execute: async (a) => this.productTools.searchProducts(ctx, a) }),
             vectorSearch: tool({ description: 'Semantic product search for vague queries like "gifts for dad".', inputSchema: z.object({ query: z.string() }), execute: async (a) => this.productTools.vectorSearch(ctx, a) }),
             getProductDetails: tool({ description: 'Get full product details by ID or slug including all variants.', inputSchema: z.object({ productId: z.string().optional(), slug: z.string().optional() }), execute: async (a) => this.productTools.getProductDetails(ctx, a) }),
             // ── Products (write) ──

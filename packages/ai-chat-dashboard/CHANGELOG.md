@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+### Docs
+
+- **Vite dev server setup.** In `vendure dev` / `vite` (not production builds), the chat's Markdown renderer pulls in CommonJS packages that Vite only loads when pre-bundled — without it the dashboard stays blank (`style-to-js … does not provide an export named 'default'`). The README now shows the `optimizeDeps.include` lines to add to `vite.config.mts`.
+
 ## 0.4.1
 
 ### Changed

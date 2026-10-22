@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+### Fixed
+
+- **"Which products are electronics?" found nothing.** The admin `searchProducts` tool only matched product names and descriptions. It now takes a `collection` (name or slug) to list a collection's products, and a keyword that names a collection (e.g. "electronics") returns that collection's products instead of nothing.
+
 ## 0.6.0
 
 ### Added

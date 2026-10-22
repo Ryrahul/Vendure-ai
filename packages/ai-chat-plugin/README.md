@@ -391,6 +391,7 @@ See the [CHANGELOG](./CHANGELOG.md) for details.
 | The assistant says the cart is empty after adding an item | Pass the storefront's current auth token to the widget (`authToken`), widget ≥ 0.2.4 |
 | "Web research is unavailable" | No OpenAI key, no Azure deployment with web search and no `webSearch` function — or `enableWebResearch: false` |
 | Research answers take a minute | Each web search takes ~10–20 s (45 s limit); the dashboard shows progress while it works |
+| Dashboard blank in `vendure dev` (`style-to-js … does not provide an export named 'default'`) | Add the `optimizeDeps.include` lines from the [dashboard README](https://www.npmjs.com/package/@rahul_vendure/ai-chat-dashboard) to `vite.config.mts` |
 | HTTP 403 on `/admin-ai-chat/*` | The administrator's role needs the `UseAiAdminAssistant` permission |
 | HTTP 429 | A [usage limit](#usage-limits) was hit |
 | Product images missing | Set `assetBaseUrl` to your AssetServerPlugin's public URL |

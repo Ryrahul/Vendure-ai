@@ -1,8 +1,11 @@
 import { Logger } from '@nestjs/common';
 import {
+    Collection,
+    ID,
     RequestContext,
     TransactionalConnection,
     Product,
+    ProductVariant,
     ProductService,
     ProductVariantService,
     ProductOptionGroupService,
@@ -40,30 +43,29 @@ export class AdminProductTools {
 
     async searchProducts(
         ctx: RequestContext,
-        args: { query?: string; take?: number; includeDisabled?: boolean },
+        args: { query?: string; collection?: string; take?: number; includeDisabled?: boolean },
     ): Promise<ToolResult> {
-        const query = (args.query ?? '').trim();
+        let query = (args.query ?? '').trim();
         const take = Math.min(args.take ?? 10, 25);
 
-        const repo = this.connection.rawConnection.getRepository(Product);
-        let qb = repo.createQueryBuilder('product')
-            .leftJoinAndSelect('product.translations', 'translation')
-            .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
-            .leftJoinAndSelect('product.variants', 'variant')
-            .leftJoinAndSelect('variant.productVariantPrices', 'price', 'price.channelId = :channelId', { channelId: ctx.channelId })
-            .leftJoinAndSelect('variant.stockLevels', 'stockLevel')
-            .innerJoin('product.channels', 'productChannel', 'productChannel.id = :channelId', { channelId: ctx.channelId })
-            .where('product.deletedAt IS NULL');
-
-        if (query) {
-            qb = qb.andWhere(
-                '(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term)',
-                { term: `%${query.toLowerCase()}%` },
-            );
+        let collection: { id: ID; name: string } | undefined;
+        if (args.collection?.trim()) {
+            collection = await this.findCollection(ctx, args.collection.trim());
+            if (!collection) {
+                return { products: [], collections: [], summary: `No collection named "${args.collection}" in this channel. Use getCollections to see the collections.` };
+            }
         }
 
-        if (!args.includeDisabled) {
-            qb = qb.andWhere('product.enabled = :enabled', { enabled: true });
+        let qb = this.productSearchQuery(ctx, query, collection?.id, args.includeDisabled);
+        // A keyword that names a category rather than a product ("electronics"): show that
+        // collection's products instead of nothing.
+        if (query && !collection && (await qb.getCount()) === 0) {
+            const match = await this.findCollection(ctx, query);
+            if (match) {
+                collection = match;
+                query = '';
+                qb = this.productSearchQuery(ctx, query, collection.id, args.includeDisabled);
+            }
         }
 
         // Also get total count for context
@@ -92,12 +94,63 @@ export class AdminProductTools {
             return `"${name}" (ID: ${p.id}, ${enabled}, price ${price}, ${variantCount} variants, stock: ${totalStock})`;
         });
 
-        const matchText = query ? `matching "${query}"` : '(most recent)';
+        const matchText = [collection ? `in collection "${collection.name}"` : '', query ? `matching "${query}"` : ''].filter(Boolean).join(' ') || '(most recent)';
         return {
             products: mapped,
             collections: [],
             summary: `Found ${totalCount} total product(s) ${matchText}, showing ${mapped.length}: ${summaryLines.join('; ')}. Product cards with images are shown in the UI — keep your text brief.`,
         };
+    }
+
+    private productSearchQuery(ctx: RequestContext, query: string, collectionId: ID | undefined, includeDisabled?: boolean) {
+        let qb = this.connection.rawConnection
+            .getRepository(Product)
+            .createQueryBuilder('product')
+            .leftJoinAndSelect('product.translations', 'translation')
+            .leftJoinAndSelect('product.featuredAsset', 'featuredAsset')
+            .leftJoinAndSelect('product.variants', 'variant')
+            .leftJoinAndSelect('variant.productVariantPrices', 'price', 'price.channelId = :channelId', { channelId: ctx.channelId })
+            .leftJoinAndSelect('variant.stockLevels', 'stockLevel')
+            .innerJoin('product.channels', 'productChannel', 'productChannel.id = :channelId', { channelId: ctx.channelId })
+            .where('product.deletedAt IS NULL');
+        if (query) {
+            qb = qb.andWhere('(LOWER(translation.name) LIKE :term OR LOWER(translation.description) LIKE :term)', {
+                term: `%${query.toLowerCase()}%`,
+            });
+        }
+        if (collectionId != null) {
+            // A subquery, so the loaded variants aren't limited to the collection's.
+            const inCollection = qb
+                .subQuery()
+                .select('cv.productId')
+                .from(ProductVariant, 'cv')
+                .innerJoin('cv.collections', 'cvCollection', 'cvCollection.id = :collectionId', { collectionId })
+                .where('cv.deletedAt IS NULL')
+                .getQuery();
+            qb = qb.andWhere(`product.id IN ${inCollection}`).setParameter('collectionId', collectionId);
+        }
+        if (!includeDisabled) {
+            qb = qb.andWhere('product.enabled = :enabled', { enabled: true });
+        }
+        return qb;
+    }
+
+    /** A collection of the active channel by slug or name (exact first, then partial). */
+    private async findCollection(ctx: RequestContext, nameOrSlug: string): Promise<{ id: ID; name: string } | undefined> {
+        const term = nameOrSlug.toLowerCase();
+        const candidates = await this.connection.rawConnection
+            .getRepository(Collection)
+            .createQueryBuilder('collection')
+            .leftJoinAndSelect('collection.translations', 'translation')
+            .innerJoin('collection.channels', 'channel', 'channel.id = :channelId', { channelId: ctx.channelId })
+            .where('collection.isRoot = false')
+            .andWhere('(LOWER(translation.name) LIKE :like OR LOWER(translation.slug) LIKE :like)', { like: `%${term}%` })
+            .getMany();
+        const nameOf = (c: Collection) => (c as any).translations?.[0]?.name ?? '';
+        const slugOf = (c: Collection) => (c as any).translations?.[0]?.slug ?? '';
+        const exact = candidates.find(c => nameOf(c).toLowerCase() === term || slugOf(c).toLowerCase() === term);
+        const chosen = exact ?? (candidates.length === 1 ? candidates[0] : undefined);
+        return chosen ? { id: chosen.id, name: nameOf(chosen) } : undefined;
     }
 
     async vectorSearch(
