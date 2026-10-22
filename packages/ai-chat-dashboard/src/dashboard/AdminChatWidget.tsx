@@ -1,28 +1,23 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useChannel } from '@vendure/dashboard';
+import { PanelLeft, Sparkles, SquarePen } from 'lucide-react';
 import { useAdminChat } from './hooks/use-admin-chat';
 import { useSessionList } from './hooks/use-session-list';
 import { SessionSidebar } from './components/SessionSidebar';
 import { ChatEmptyState } from './components/ChatEmptyState';
-import { ChatMessageBubble } from './components/ChatMessageBubble';
+import { AssistantAvatar, ChatMessageBubble } from './components/ChatMessageBubble';
 import { ChatInput } from './components/ChatInput';
-import { Bot } from 'lucide-react';
 import { LoadingStatus } from './components/LoadingStatus';
+import { CHAT_CSS, T } from './components/theme';
 
-function LoadingDots() {
+/** Width of the conversation column; cards and tables use it all. */
+const COLUMN = 900;
+
+function Thinking() {
     return (
-        <div style={{
-            display: 'flex', gap: 12, padding: 16, margin: '16px 0',
-            borderRadius: 12, border: '1px solid var(--border, #e2e8f0)',
-            background: 'var(--background, #fff)',
-        }}>
-            <div style={{
-                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                background: 'var(--foreground, #0f172a)', color: 'var(--background, #fff)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-                <Bot style={{ width: 16, height: 16 }} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingTop: 6 }}>
+        <div className="ac-msg" style={{ display: 'flex', gap: 12, padding: '14px 0' }}>
+            <AssistantAvatar />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minHeight: 28 }}>
                 <span className="ac-dot" />
                 <span className="ac-dot" style={{ animationDelay: '0.15s' }} />
                 <span className="ac-dot" style={{ animationDelay: '0.3s' }} />
@@ -32,27 +27,39 @@ function LoadingDots() {
     );
 }
 
+function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+    const [hover, setHover] = useState(false);
+    return (
+        <button
+            type="button"
+            title={title}
+            aria-label={title}
+            onClick={onClick}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+            style={{
+                width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: hover ? T.accent : 'transparent', color: T.mutedFg,
+            }}
+        >
+            {children}
+        </button>
+    );
+}
+
 export function AdminChatWidget() {
     const {
         messages, input, setInput, isLoading, scrollRef,
         sendMessage, sessionId, newConversation, loadSession, resolveConfirmation,
     } = useAdminChat();
-
     const { sessions, refresh: refreshSessions, deleteSession } = useSessionList();
-
-    const handleNewChat = useCallback(() => {
-        newConversation();
-    }, [newConversation]);
-
-    const handleSelectSession = useCallback(async (sid: string) => {
-        await loadSession(sid);
-    }, [loadSession]);
+    const { activeChannel } = useChannel();
+    const [showSessions, setShowSessions] = useState(true);
 
     const handleDeleteSession = useCallback(async (sid: string) => {
         await deleteSession(sid);
-        if (sid === sessionId) {
-            newConversation();
-        }
+        if (sid === sessionId) newConversation();
     }, [deleteSession, sessionId, newConversation]);
 
     const handleSend = useCallback(async (text: string) => {
@@ -60,82 +67,83 @@ export function AdminChatWidget() {
         setTimeout(() => refreshSessions(), 500);
     }, [sendMessage, refreshSessions]);
 
-    return (
-        <div style={{ display: 'flex', height: '100%', minHeight: 0, background: 'var(--background, #fff)' }}>
-            {/* Sidebar */}
-            <SessionSidebar
-                sessions={sessions}
-                activeSessionId={sessionId}
-                onSelect={handleSelectSession}
-                onNew={handleNewChat}
-                onDelete={handleDeleteSession}
-            />
+    const title = sessions.find(s => s.sessionId === sessionId)?.title;
 
-            {/* Main chat area */}
-            <div style={{ display: 'flex', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+    return (
+        <div className="ai-chat-page" style={{ display: 'flex', height: '100%', minHeight: 0, background: T.bg, borderTop: `1px solid ${T.border}` }}>
+            {showSessions && (
+                <SessionSidebar
+                    sessions={sessions}
+                    activeSessionId={sessionId}
+                    onSelect={sid => loadSession(sid)}
+                    onNew={newConversation}
+                    onDelete={handleDeleteSession}
+                />
+            )}
+
+            <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, flexDirection: 'column' }}>
                 {/* Header */}
                 <div style={{
-                    borderBottom: '1px solid var(--border, #e2e8f0)',
-                    padding: '10px 20px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    background: 'var(--background, #fff)',
-                    flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
+                    borderBottom: `1px solid ${T.border}`, flexShrink: 0,
                 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground, #0f172a)' }}>AI Assistant</span>
-                    {messages.length > 0 && (
-                        <span style={{ fontSize: 10, color: 'var(--muted-foreground, #94a3b8)', fontFamily: 'monospace' }}>
-                            {sessionId.slice(0, 20)}...
+                    <IconButton title={showSessions ? 'Hide conversations' : 'Show conversations'} onClick={() => setShowSessions(v => !v)}>
+                        <PanelLeft size={16} />
+                    </IconButton>
+                    <Sparkles size={16} style={{ color: T.primary, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: T.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {messages.length && title ? title : 'AI Assistant'}
+                        </div>
+                    </div>
+                    {activeChannel && (
+                        <span
+                            title="The assistant works in the channel selected in the dashboard"
+                            style={{
+                                fontSize: 12, color: T.mutedFg, border: `1px solid ${T.border}`, borderRadius: 999,
+                                padding: '3px 10px', whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}
+                        >
+                            {activeChannel.code === '__default_channel__' ? 'Default channel' : activeChannel.code}
                         </span>
+                    )}
+                    {messages.length > 0 && (
+                        <IconButton title="New conversation" onClick={newConversation}>
+                            <SquarePen size={16} />
+                        </IconButton>
                     )}
                 </div>
 
-                {/* Messages Area */}
-                <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                {/* Messages */}
+                <div className="ac-scroll" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                     {messages.length === 0 ? (
                         <ChatEmptyState onSend={handleSend} />
                     ) : (
-                        <div style={{ maxWidth: 768, margin: '0 auto', padding: '0 20px' }}>
-                            <div style={{ padding: '16px 0' }}>
-                                {messages.map(msg => (
-                                    <ChatMessageBubble
-                                        key={msg.id}
-                                        message={msg}
-                                        onResolveConfirmation={(id, decision) => resolveConfirmation(msg.id, id, decision)}
-                                    />
-                                ))}
-                                {isLoading && <LoadingDots />}
-                                <div ref={scrollRef} style={{ height: 32 }} />
-                            </div>
+                        <div style={{ maxWidth: COLUMN, margin: '0 auto', padding: '16px 24px 8px' }}>
+                            {messages.map(msg => (
+                                <ChatMessageBubble
+                                    key={msg.id}
+                                    message={msg}
+                                    onResolveConfirmation={(id, decision) => resolveConfirmation(msg.id, id, decision)}
+                                />
+                            ))}
+                            {isLoading && <Thinking />}
+                            <div ref={scrollRef} style={{ height: 24 }} />
                         </div>
                     )}
                 </div>
 
                 {/* Input */}
-                <div style={{
-                    borderTop: '1px solid var(--border, #e2e8f0)',
-                    background: 'var(--background, #fff)',
-                    flexShrink: 0,
-                }}>
-                    <div style={{ maxWidth: 768, margin: '0 auto' }}>
-                        <ChatInput
-                            value={input}
-                            onChange={setInput}
-                            onSubmit={() => handleSend(input)}
-                            disabled={isLoading}
-                        />
+                <div style={{ flexShrink: 0, padding: '8px 24px 16px' }}>
+                    <div style={{ maxWidth: COLUMN, margin: '0 auto' }}>
+                        <ChatInput value={input} onChange={setInput} onSubmit={() => handleSend(input)} disabled={isLoading} />
                     </div>
                 </div>
             </div>
 
-            <style>{`
-                .ac-dot {
-                    display: inline-block;
-                    width: 5px; height: 5px; border-radius: 50%;
-                    background: var(--muted-foreground, #94a3b8);
-                    animation: ac-bounce 0.6s infinite alternate;
-                }
-                @keyframes ac-bounce { to { opacity: 0.3; transform: translateY(-4px); } }
-            `}</style>
+            <style>{CHAT_CSS}</style>
+            {/* The dashboard centres every page in a max-width container; the chat uses the full width. */}
+            <style>{`.container:has(> * .ai-chat-page), .container:has(.ai-chat-page) { max-width: none !important; padding-left: 0 !important; padding-right: 0 !important; }`}</style>
         </div>
     );
 }

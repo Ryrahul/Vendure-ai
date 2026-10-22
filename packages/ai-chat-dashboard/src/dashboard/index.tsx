@@ -3,10 +3,11 @@ import { AdminChatWidget } from './AdminChatWidget';
 import { AiChatToolbarButton } from './components/AiChatToolbarButton';
 import { EmbedAllButton } from './components/EmbedAllButton';
 import React from 'react';
+import { Sparkles } from 'lucide-react';
 
 function AiChatPage() {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', minHeight: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100svh - 64px)', minHeight: 0 }}>
             <AdminChatWidget />
         </div>
     );
@@ -28,6 +29,7 @@ defineDashboardExtension({
         {
             id: 'ai',
             title: 'AI',
+            icon: Sparkles,
             placement: 'top',
             order: 150,
         },

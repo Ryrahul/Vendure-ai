@@ -6,8 +6,8 @@ This package is the UI. The assistant itself runs on your server in [`@rahul_ven
 
 ## Features
 
-- **AI Chat page** — its own **AI** section in the sidebar, with a list of your past conversations (private to each administrator).
-- **Quick chat in the toolbar** — a sparkle button next to the alerts bell opens a compact chat on any page; "Open full view" switches to the AI Chat page.
+- **AI Chat page** — its own **AI** section (✨) in the sidebar; a full-width chat with your past conversations along the left, grouped by date and searchable (private to each administrator).
+- **Quick chat on every page** — the ✨ button (bottom right) opens a compact chat with the same abilities (cards, confirmations, charts); "Open full view" switches to the AI Chat page.
 - **Works in the active channel** — follows the dashboard's channel switcher; the assistant only sees and changes what your role allows in that channel.
 - **Product and order cards** — results render with images, prices and status badges; click to open them in the dashboard.
 - **Confirm before destructive actions** — deletes and changes to staff, roles, channels, settings or payment methods appear as a Confirm / Cancel card; nothing runs until you press Confirm.

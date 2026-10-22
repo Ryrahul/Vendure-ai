@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+### Changed
+
+- **Redesigned chat.** The AI Chat page uses the full width of the dashboard (it was squeezed into a narrow centred column) with the conversation list along the left edge — grouped by date, searchable, delete on hover with a second click to confirm, and collapsible. The header shows the conversation title and the active channel instead of a session id. Your messages are right-aligned bubbles; replies have an avatar, better Markdown (lists, tables, code) and their product, order, confirmation and insight cards underneath. New empty state with suggestion cards, an input that grows with the text, and a progress line while the assistant works. Colours come from the dashboard theme, so light/dark mode and custom themes apply.
+- **AI section icon** in the sidebar (✨).
+
+### Fixed
+
+- **The toolbar quick chat dropped confirmations and insight cards** — asking it to delete something showed no Confirm button, and sales questions showed no charts. It now shares the chat logic with the AI Chat page. Its floating button is hidden on the AI Chat page itself.
+
 ## 0.4.2
 
 ### Docs
