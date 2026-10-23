@@ -12,6 +12,8 @@ AI assistants for [Vendure](https://www.vendure.io/) 3.x: a shopping assistant f
 
 Each package README is the full reference (configuration, providers, endpoints, troubleshooting). This file covers working on the repo.
 
+**Adding the AI to an existing Vendure project?** Follow [SETUP.md](./SETUP.md), a step-by-step guide you can also hand to an AI coding agent.
+
 ## Repository layout
 
 ```
